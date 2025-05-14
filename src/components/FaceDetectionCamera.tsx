@@ -26,16 +26,16 @@ const FaceDetectionCamera = () => {
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   // Load face detection models
   useEffect(() => {
     const loadModels = async () => {
       setIsModelLoading(true);
       try {
-        // Load models from models directory in public folder
-        const MODEL_URL = './models';
+        // Load models from CDN instead of local files
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
-        // Display loading toast
         toast({
           title: "Loading face detection models",
           description: "This may take a moment...",
@@ -48,6 +48,8 @@ const FaceDetectionCamera = () => {
           faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         ]);
         
+        setModelsLoaded(true);
+        
         toast({
           title: "Models loaded successfully",
           description: "You can now start the camera",
@@ -57,7 +59,7 @@ const FaceDetectionCamera = () => {
         toast({
           variant: "destructive",
           title: "Error loading models",
-          description: "Please check that the models are properly installed in the public/models directory",
+          description: "Failed to load face detection models. Please refresh the page and try again.",
         });
       } finally {
         setIsModelLoading(false);
@@ -134,7 +136,7 @@ const FaceDetectionCamera = () => {
 
   // Handle face detection when video is playing
   const handleVideoPlay = () => {
-    if (!canvasRef.current || !videoRef.current) return;
+    if (!canvasRef.current || !videoRef.current || !modelsLoaded) return;
     
     const displaySize = {
       width: videoRef.current.videoWidth,
@@ -144,38 +146,42 @@ const FaceDetectionCamera = () => {
     faceapi.matchDimensions(canvasRef.current, displaySize);
     
     const detectFaces = async () => {
-      if (!videoRef.current || !canvasRef.current || !isCameraActive) return;
+      if (!videoRef.current || !canvasRef.current || !isCameraActive || !modelsLoaded) return;
       
-      const detections = await faceapi
-        .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks()
-        .withFaceExpressions()
-        .withAgeAndGender();
-      
-      const resizedDetections = faceapi.resizeResults(detections, displaySize);
-      
-      // Clear the canvas and draw new results
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      try {
+        const detections = await faceapi
+          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+          .withFaceLandmarks()
+          .withFaceExpressions()
+          .withAgeAndGender();
         
-        // Draw face detection results on canvas
-        faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
-        faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
         
-        // Update state with detected faces
-        setDetectedFaces(
-          resizedDetections.map(detection => ({
-            detection: detection.detection,
-            expressions: detection.expressions,
-            age: detection.age,
-            gender: detection.gender
-          }))
-        );
+        // Clear the canvas and draw new results
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          
+          // Draw face detection results on canvas
+          faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
+          faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
+          
+          // Update state with detected faces
+          setDetectedFaces(
+            resizedDetections.map(detection => ({
+              detection: detection.detection,
+              expressions: detection.expressions,
+              age: detection.age,
+              gender: detection.gender
+            }))
+          );
+        }
+      } catch (error) {
+        console.error('Face detection error:', error);
       }
       
       // Continue detection if camera is active
-      if (isCameraActive) {
+      if (isCameraActive && modelsLoaded) {
         requestAnimationFrame(detectFaces);
       }
     };
@@ -212,6 +218,7 @@ const FaceDetectionCamera = () => {
             <Button 
               onClick={startCamera} 
               className="bg-green-500 hover:bg-green-600"
+              disabled={!modelsLoaded}
             >
               <Camera className="mr-2 h-4 w-4" />
               Start Camera
