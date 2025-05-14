@@ -1,12 +1,26 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React from 'react';
+import FaceDetectionCamera from '@/components/FaceDetectionCamera';
 
 const Index = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4">
+      <header className="max-w-3xl mx-auto mb-8">
+        <h1 className="text-3xl md:text-4xl font-bold mb-2 text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500">
+          Face Recognition App
+        </h1>
+        <p className="text-gray-300 text-center max-w-xl mx-auto">
+          This app uses your device's camera to detect and analyze faces in real-time.
+        </p>
+      </header>
+
+      <main className="max-w-4xl mx-auto">
+        <FaceDetectionCamera />
+      </main>
+      
+      <footer className="mt-16 text-center text-gray-400 text-sm">
+        <p>For demonstration purposes only. Privacy-focused: no face data is stored or transmitted.</p>
+      </footer>
     </div>
   );
 };
