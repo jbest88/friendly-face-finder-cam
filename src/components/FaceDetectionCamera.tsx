@@ -1,10 +1,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Camera, CameraOff } from 'lucide-react';
+import { Loader2, Camera, CameraOff, SwitchCamera } from 'lucide-react';
 
 type DetectedFace = {
   detection: faceapi.FaceDetection;
@@ -12,6 +12,10 @@ type DetectedFace = {
   age?: number;
   gender?: string;
 };
+
+interface VideoConstraints {
+  facingMode: 'user' | 'environment';
+}
 
 const FaceDetectionCamera = () => {
   const { toast } = useToast();
@@ -21,14 +25,15 @@ const FaceDetectionCamera = () => {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
   // Load face detection models
   useEffect(() => {
     const loadModels = async () => {
       setIsModelLoading(true);
       try {
-        // Load models from public folder
-        const MODEL_URL = '/models';
+        // Load models from models directory in public folder
+        const MODEL_URL = './models';
         
         // Display loading toast
         toast({
@@ -52,7 +57,7 @@ const FaceDetectionCamera = () => {
         toast({
           variant: "destructive",
           title: "Error loading models",
-          description: "Please check your connection and try again",
+          description: "Please check that the models are properly installed in the public/models directory",
         });
       } finally {
         setIsModelLoading(false);
@@ -72,9 +77,16 @@ const FaceDetectionCamera = () => {
   const startCamera = async () => {
     try {
       if (videoRef.current) {
-        const currentStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" }
-        });
+        // Stop any existing stream
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        
+        const constraints: MediaStreamConstraints = {
+          video: { facingMode }
+        };
+        
+        const currentStream = await navigator.mediaDevices.getUserMedia(constraints);
         
         videoRef.current.srcObject = currentStream;
         setStream(currentStream);
@@ -82,7 +94,7 @@ const FaceDetectionCamera = () => {
         
         toast({
           title: "Camera activated",
-          description: "Face detection is now running",
+          description: `Using ${facingMode === 'user' ? 'front' : 'back'} camera`,
         });
       }
     } catch (error) {
@@ -105,6 +117,18 @@ const FaceDetectionCamera = () => {
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
+    }
+  };
+
+  const switchCamera = async () => {
+    const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newFacingMode);
+    
+    // Only restart camera if it's currently active
+    if (isCameraActive) {
+      await stopCamera();
+      // Small timeout to ensure camera has fully stopped
+      setTimeout(() => startCamera(), 300);
     }
   };
 
@@ -198,14 +222,24 @@ const FaceDetectionCamera = () => {
       
       {isCameraActive && (
         <>
-          <Button 
-            onClick={stopCamera} 
-            variant="destructive" 
-            className="mb-6"
-          >
-            <CameraOff className="mr-2 h-4 w-4" />
-            Stop Camera
-          </Button>
+          <div className="flex space-x-4 mb-6">
+            <Button 
+              onClick={stopCamera} 
+              variant="destructive" 
+            >
+              <CameraOff className="mr-2 h-4 w-4" />
+              Stop Camera
+            </Button>
+            
+            <Button
+              onClick={switchCamera}
+              variant="outline"
+              className="border-green-500 text-green-500 hover:bg-green-500/10"
+            >
+              <SwitchCamera className="mr-2 h-4 w-4" />
+              Switch Camera ({facingMode === 'user' ? 'Front' : 'Back'})
+            </Button>
+          </div>
           
           <div className="w-full">
             <h2 className="text-xl font-bold mb-4 text-center">
