@@ -33,8 +33,8 @@ const FaceDetectionCamera = () => {
     const loadModels = async () => {
       setIsModelLoading(true);
       try {
-        // Load models from CDN instead of local files
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+        // Use a different, more reliable CDN for the face-api.js models
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         
         toast({
           title: "Loading face detection models",
