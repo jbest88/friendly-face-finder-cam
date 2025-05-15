@@ -21,6 +21,9 @@ export interface DetectedFace {
 }
 
 export class FaceDetectionService {
+  // Face recognition threshold - lower values are more strict
+  private static RECOGNITION_THRESHOLD = 0.5;
+  
   static async detectFaces(
     videoElement: HTMLVideoElement, 
     canvasElement: HTMLCanvasElement
@@ -114,9 +117,13 @@ export class FaceDetectionService {
         return undefined;
       }
 
+      // Convert descriptor to array before storing to ensure it's properly saved
+      const descriptorArray = Array.from(face.descriptor);
+      console.log('Storing face descriptor with length:', descriptorArray.length);
+
       const { data, error } = await supabase.from('stored_faces').insert({
         name: face.name || 'Unknown',
-        descriptor: Array.from(face.descriptor),
+        descriptor: descriptorArray,
         image: face.image,
         age: face.age,
         gender: face.gender,
@@ -129,6 +136,7 @@ export class FaceDetectionService {
         return undefined;
       }
 
+      console.log('Face stored successfully with ID:', data.id);
       return data.id;
     } catch (error) {
       console.error('Error storing face in database:', error);
@@ -145,19 +153,29 @@ export class FaceDetectionService {
         return [];
       }
 
+      console.log('Fetched faces from database:', data.length);
+      
       // Convert from database format to DetectedFace format
-      return data.map(record => ({
-        id: record.id,
-        name: record.name,
-        descriptor: new Float32Array(record.descriptor),
-        image: record.image,
-        age: record.age,
-        gender: record.gender,
-        notifyOnRecognition: record.notify_on_recognition,
-        notes: record.notes,
-        timestamp: new Date(record.created_at),
-        detection: null, // Adding the required detection property
-      }));
+      return data.map(record => {
+        // Ensure we have a descriptor and it's converted to Float32Array
+        if (!record.descriptor || !Array.isArray(record.descriptor)) {
+          console.error('Invalid descriptor for face:', record.id);
+          return null;
+        }
+        
+        return {
+          id: record.id,
+          name: record.name,
+          descriptor: new Float32Array(record.descriptor),
+          image: record.image,
+          age: record.age,
+          gender: record.gender,
+          notifyOnRecognition: record.notify_on_recognition,
+          notes: record.notes,
+          timestamp: new Date(record.created_at),
+          detection: null // Adding the required detection property
+        };
+      }).filter(face => face !== null) as DetectedFace[]; // Filter out invalid faces
     } catch (error) {
       console.error('Error processing faces from database:', error);
       return [];
@@ -194,12 +212,19 @@ export class FaceDetectionService {
 
   static compareFaces(detectedFace: DetectedFace, storedFaces: DetectedFace[]): DetectedFace | undefined {
     try {
-      if (!detectedFace.descriptor || storedFaces.length === 0) return undefined;
+      if (!detectedFace.descriptor || storedFaces.length === 0) {
+        console.log('No descriptor or stored faces to compare');
+        return undefined;
+      }
 
+      console.log(`Comparing with ${storedFaces.length} stored faces`);
       let bestMatch: { face: DetectedFace, distance: number } | undefined;
 
       for (const storedFace of storedFaces) {
-        if (!storedFace.descriptor) continue;
+        if (!storedFace.descriptor) {
+          console.log('Skipping face without descriptor');
+          continue;
+        }
 
         // Calculate Euclidean distance between face descriptors
         const distance = this.calculateFaceDistance(
@@ -207,9 +232,10 @@ export class FaceDetectionService {
           storedFace.descriptor
         );
 
+        console.log(`Comparing with ${storedFace.name || 'Unknown'}, distance: ${distance}`);
+
         // Lower distance = better match
-        // Threshold of 0.6 is a good starting point - can be adjusted
-        if (distance < 0.6 && (!bestMatch || distance < bestMatch.distance)) {
+        if (distance < this.RECOGNITION_THRESHOLD && (!bestMatch || distance < bestMatch.distance)) {
           bestMatch = {
             face: storedFace,
             distance
@@ -218,6 +244,7 @@ export class FaceDetectionService {
       }
 
       if (bestMatch) {
+        console.log(`Match found: ${bestMatch.face.name}, similarity: ${(1 - bestMatch.distance) * 100}%`);
         return {
           ...detectedFace,
           isRecognized: true,
@@ -229,6 +256,7 @@ export class FaceDetectionService {
         };
       }
 
+      console.log('No match found among stored faces');
       return undefined;
     } catch (error) {
       console.error('Error comparing faces:', error);
@@ -237,6 +265,11 @@ export class FaceDetectionService {
   }
 
   private static calculateFaceDistance(descriptor1: Float32Array, descriptor2: Float32Array): number {
+    if (!descriptor1 || !descriptor2 || descriptor1.length !== descriptor2.length) {
+      console.error('Invalid descriptors for comparison');
+      return Infinity;
+    }
+
     let sum = 0;
     for (let i = 0; i < descriptor1.length; i++) {
       const diff = descriptor1[i] - descriptor2[i];

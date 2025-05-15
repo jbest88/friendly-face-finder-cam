@@ -27,8 +27,13 @@ const FaceDetectionCamera = () => {
 
   // Load saved faces from localStorage and database on component mount
   useEffect(() => {
-    setSavedFaces(FaceDetectionService.loadSavedFaces());
-    loadDatabaseFaces();
+    const loadFaces = async () => {
+      setSavedFaces(FaceDetectionService.loadSavedFaces());
+      await loadDatabaseFaces();
+      console.log('Face data loaded on component mount');
+    };
+    
+    loadFaces();
     
     // Cleanup function
     return () => {
@@ -40,10 +45,26 @@ const FaceDetectionCamera = () => {
 
   const loadDatabaseFaces = async () => {
     try {
+      console.log('Loading faces from database...');
       const faces = await FaceDetectionService.getFacesFromDatabase();
+      console.log(`Loaded ${faces.length} faces from database`);
+      faces.forEach(face => {
+        if (face.descriptor) {
+          console.log(`Face ${face.name} has descriptor of length ${face.descriptor.length}`);
+        } else {
+          console.log(`Face ${face.name} has no descriptor!`);
+        }
+      });
       setDatabaseFaces(faces);
+      return faces;
     } catch (error) {
       console.error('Error loading faces from database:', error);
+      toast({
+        variant: "destructive",
+        title: "Error loading saved faces",
+        description: "Could not retrieve your saved faces from the database.",
+      });
+      return [];
     }
   };
 
@@ -68,6 +89,9 @@ const FaceDetectionCamera = () => {
           title: "Camera activated",
           description: `Using ${facingMode === 'user' ? 'front' : 'back'} camera`,
         });
+        
+        // Reload faces to ensure we have latest data
+        await loadDatabaseFaces();
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -118,7 +142,9 @@ const FaceDetectionCamera = () => {
       
       // Save to database
       for (const face of capturedFaces) {
-        await FaceDetectionService.storeFaceInDatabase(face);
+        console.log('Saving face to database:', face);
+        const id = await FaceDetectionService.storeFaceInDatabase(face);
+        console.log('Face saved with ID:', id);
       }
       
       // Update local state
@@ -126,11 +152,11 @@ const FaceDetectionCamera = () => {
       FaceDetectionService.saveFaces([...savedFaces, ...capturedFaces]);
       
       // Refresh database faces
-      await loadDatabaseFaces();
+      const updatedFaces = await loadDatabaseFaces();
       
       toast({
         title: "Face captured",
-        description: `Saved ${capturedFaces.length} face(s) to database`,
+        description: `Saved ${capturedFaces.length} face(s) to database. ${updatedFaces.length} total faces in database.`,
       });
     } catch (error) {
       console.error('Error capturing face:', error);
@@ -151,31 +177,38 @@ const FaceDetectionCamera = () => {
     const detectFaces = async () => {
       if (!videoRef.current || !canvasRef.current || !isCameraActive || !modelsLoaded) return;
       
-      const currentDetectedFaces = await FaceDetectionService.detectFaces(
-        videoRef.current, 
-        canvasRef.current
-      );
-      
-      // If we have database faces, check for matches
-      if (databaseFaces.length > 0) {
-        const recognizedFaces = currentDetectedFaces.map(face => {
-          const match = FaceDetectionService.compareFaces(face, databaseFaces);
-          if (match) {
-            // If this face has notify_on_recognition set, show notification
-            if (match.notifyOnRecognition) {
-              toast({
-                title: `Recognized: ${match.name}`,
-                description: match.notes || "This person is in your database",
-              });
-            }
-            return match;
-          }
-          return face;
-        });
+      try {
+        const currentDetectedFaces = await FaceDetectionService.detectFaces(
+          videoRef.current, 
+          canvasRef.current
+        );
         
-        setDetectedFaces(recognizedFaces);
-      } else {
-        setDetectedFaces(currentDetectedFaces);
+        // If we have database faces, check for matches
+        if (databaseFaces.length > 0) {
+          console.log(`Checking for matches against ${databaseFaces.length} database faces`);
+          const recognizedFaces = currentDetectedFaces.map(face => {
+            const match = FaceDetectionService.compareFaces(face, databaseFaces);
+            if (match) {
+              console.log(`Match found for face: ${match.name || 'Unknown'}`);
+              // If this face has notify_on_recognition set, show notification
+              if (match.notifyOnRecognition) {
+                toast({
+                  title: `Recognized: ${match.name}`,
+                  description: match.notes || "This person is in your database",
+                });
+              }
+              return match;
+            }
+            return face;
+          });
+          
+          setDetectedFaces(recognizedFaces);
+        } else {
+          console.log('No database faces to match against');
+          setDetectedFaces(currentDetectedFaces);
+        }
+      } catch (error) {
+        console.error('Error in face detection loop:', error);
       }
       
       // Continue detection if camera is active
