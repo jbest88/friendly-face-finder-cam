@@ -1,7 +1,7 @@
-
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
+import { NotificationsService } from './NotificationsService';
 
 export interface DetectedFace {
   detection: any; // Using 'any' temporarily to resolve TypeScript errors
@@ -245,7 +245,9 @@ export class FaceDetectionService {
 
       if (bestMatch) {
         console.log(`Match found: ${bestMatch.face.name}, similarity: ${(1 - bestMatch.distance) * 100}%`);
-        return {
+        
+        // Create a matched face with recognition info
+        const recognizedFace = {
           ...detectedFace,
           isRecognized: true,
           matchedFaceId: bestMatch.face.id,
@@ -254,6 +256,14 @@ export class FaceDetectionService {
           notifyOnRecognition: bestMatch.face.notifyOnRecognition,
           similarity: 1 - bestMatch.distance // Convert distance to similarity (0-1)
         };
+        
+        // Send notification if the notifyOnRecognition flag is true
+        // or if it's undefined (default to notification for backward compatibility)
+        if (bestMatch.face.notifyOnRecognition !== false) {
+          this.sendRecognitionNotification(recognizedFace);
+        }
+        
+        return recognizedFace;
       }
 
       console.log('No match found among stored faces');
@@ -276,6 +286,28 @@ export class FaceDetectionService {
       sum += diff * diff;
     }
     return Math.sqrt(sum);
+  }
+  
+  private static async sendRecognitionNotification(face: DetectedFace): Promise<void> {
+    if (!face.name) return;
+    
+    try {
+      // Capture a new image if one doesn't exist
+      if (!face.image) {
+        console.log('No image available for notification, skipping');
+        return;
+      }
+      
+      console.log(`Sending notification for recognized face: ${face.name}`);
+      await NotificationsService.sendRecognitionNotification(
+        face.name,
+        face.matchedFaceId,
+        face.image,
+        face.notes
+      );
+    } catch (error) {
+      console.error('Error sending recognition notification:', error);
+    }
   }
 
   // Legacy methods for localStorage

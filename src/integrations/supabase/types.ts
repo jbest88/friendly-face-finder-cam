@@ -9,6 +9,44 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      recognition_notifications: {
+        Row: {
+          face_id: string | null
+          face_name: string
+          id: string
+          image: string | null
+          is_read: boolean
+          notes: string | null
+          recognized_at: string
+        }
+        Insert: {
+          face_id?: string | null
+          face_name: string
+          id?: string
+          image?: string | null
+          is_read?: boolean
+          notes?: string | null
+          recognized_at?: string
+        }
+        Update: {
+          face_id?: string | null
+          face_name?: string
+          id?: string
+          image?: string | null
+          is_read?: boolean
+          notes?: string | null
+          recognized_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recognition_notifications_face_id_fkey"
+            columns: ["face_id"]
+            isOneToOne: false
+            referencedRelation: "stored_faces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stored_faces: {
         Row: {
           age: number | null
