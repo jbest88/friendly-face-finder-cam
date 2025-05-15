@@ -1,4 +1,5 @@
 
+import React from 'react' // Make sure React is explicitly imported
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
@@ -7,4 +8,9 @@ import './index.css'
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error('Failed to find the root element');
 
-createRoot(rootElement).render(<App />);
+// Use React.StrictMode to help catch common issues
+createRoot(rootElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
