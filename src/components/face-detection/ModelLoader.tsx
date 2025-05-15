@@ -59,7 +59,7 @@ const ModelLoader: React.FC<ModelLoaderProps> = ({ onModelsLoaded }) => {
         
         if (modelLoadAttempts < 2) {
           // Try another CDN
-          setModelLoadAttempts(modelLoadAttempts + 1);
+          setModelLoadAttempts(prev => prev + 1);
           toast({
             title: "Trying another model source",
             description: "Previous model source failed, attempting alternative...",
@@ -77,7 +77,7 @@ const ModelLoader: React.FC<ModelLoaderProps> = ({ onModelsLoaded }) => {
     };
 
     loadModels();
-  }, [toast, modelLoadAttempts, onModelsLoaded]);
+  }, [modelLoadAttempts, onModelsLoaded, toast]);
 
   if (!isLoading) return null;
 

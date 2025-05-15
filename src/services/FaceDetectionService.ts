@@ -156,6 +156,7 @@ export class FaceDetectionService {
         notifyOnRecognition: record.notify_on_recognition,
         notes: record.notes,
         timestamp: new Date(record.created_at),
+        detection: null, // Adding the required detection property
       }));
     } catch (error) {
       console.error('Error processing faces from database:', error);
@@ -250,9 +251,10 @@ export class FaceDetectionService {
       const saved = localStorage.getItem('savedFaces');
       if (saved) {
         const faces = JSON.parse(saved);
-        // Convert string dates back to Date objects
+        // Convert string dates back to Date objects and add required detection property
         return faces.map((face: any) => ({
           ...face,
+          detection: null, // Adding the required detection property
           timestamp: new Date(face.timestamp)
         }));
       }
