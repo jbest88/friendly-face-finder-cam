@@ -5,8 +5,8 @@ import {
   ToastProps 
 } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 100;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_LIMIT = 3; // Reduce from 100 to 3 to prevent spam
+const TOAST_REMOVE_DELAY = 5000; // Reduce from 1000000 to 5000 ms (5 seconds)
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -21,6 +21,11 @@ const actionTypes = {
   DISMISS_TOAST: "DISMISS_TOAST",
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const;
+
+// Track displayed toast IDs to prevent duplicates
+const displayedToastIds = new Set<string>();
+// Max number of tracked IDs to prevent memory leaks
+const MAX_TRACKED_TOASTS = 100;
 
 let count = 0;
 
@@ -62,6 +67,7 @@ const addToRemoveQueue = (toastId: string) => {
 
   const timeout = setTimeout(() => {
     toastTimeouts.delete(toastId);
+    displayedToastIds.delete(toastId); // Clean up tracking
     dispatch({
       type: actionTypes.REMOVE_TOAST,
       toastId,
@@ -138,14 +144,44 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+// Helper to generate a unique key for a toast message
+const getToastKey = (props: Toast): string => {
+  const { title, description } = props;
+  return `${title}:${description}`;
+};
+
+// Clean up old tracked toast IDs if we exceed the maximum
+const cleanupTrackedToasts = () => {
+  if (displayedToastIds.size > MAX_TRACKED_TOASTS) {
+    // Just reset the whole set if we hit the limit
+    displayedToastIds.clear();
+  }
+};
+
 function toast({ ...props }: Toast) {
   const id = genId();
+
+  // Check for duplicate toasts (same title and description)
+  const toastKey = getToastKey(props);
+  if (displayedToastIds.has(toastKey)) {
+    console.log('Preventing duplicate toast:', toastKey);
+    return {
+      id,
+      dismiss: () => {},
+      update: () => {},
+    };
+  }
+  
+  // Track this toast message
+  displayedToastIds.add(toastKey);
+  cleanupTrackedToasts();
 
   const update = (props: Toast) =>
     dispatch({
       type: actionTypes.UPDATE_TOAST,
       toast: { ...props, id },
     });
+    
   const dismiss = () => dispatch({ type: actionTypes.DISMISS_TOAST, toastId: id });
 
   dispatch({
@@ -188,7 +224,7 @@ function useToast() {
   return {
     ...state,
     toast,
-    dismiss: (toastId?: string) => dispatch({ type: actionTypes.DISMISS_TOAST, toastId }),
+    dismiss: (toastId?: string) => dispatch({ type: actionType["DISMISS_TOAST"], toastId }),
   };
 }
 

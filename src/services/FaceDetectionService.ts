@@ -1,3 +1,4 @@
+
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,6 +24,10 @@ export interface DetectedFace {
 export class FaceDetectionService {
   // Face recognition threshold - lower values are more strict
   private static RECOGNITION_THRESHOLD = 0.5;
+  // Track faces we've recently recognized to avoid sending duplicate notifications
+  private static recentlyRecognizedFaces: Map<string, number> = new Map();
+  // How long to remember a face was recognized (ms)
+  private static RECOGNITION_MEMORY = 10000; // 10 seconds
   
   static async detectFaces(
     videoElement: HTMLVideoElement, 
@@ -232,8 +237,6 @@ export class FaceDetectionService {
           storedFace.descriptor
         );
 
-        console.log(`Comparing with ${storedFace.name || 'Unknown'}, distance: ${distance}`);
-
         // Lower distance = better match
         if (distance < this.RECOGNITION_THRESHOLD && (!bestMatch || distance < bestMatch.distance)) {
           bestMatch = {
@@ -257,9 +260,16 @@ export class FaceDetectionService {
           similarity: 1 - bestMatch.distance // Convert distance to similarity (0-1)
         };
         
-        // Send notification if the notifyOnRecognition flag is true
-        // or if it's undefined (default to notification for backward compatibility)
-        if (bestMatch.face.notifyOnRecognition !== false) {
+        // Only send notification if the face has notifyOnRecognition set
+        // and we haven't recently recognized this face
+        if (bestMatch.face.notifyOnRecognition !== false && 
+            bestMatch.face.id && 
+            !this.wasRecentlyRecognized(bestMatch.face.id)) {
+          
+          // Mark this face as recently recognized
+          this.markFaceAsRecognized(bestMatch.face.id);
+          
+          // Send notification with image data
           this.sendRecognitionNotification(recognizedFace);
         }
         
@@ -271,6 +281,38 @@ export class FaceDetectionService {
     } catch (error) {
       console.error('Error comparing faces:', error);
       return undefined;
+    }
+  }
+
+  /**
+   * Check if a face was recently recognized to avoid duplicate notifications
+   */
+  private static wasRecentlyRecognized(faceId: string): boolean {
+    const now = Date.now();
+    const lastRecognized = this.recentlyRecognizedFaces.get(faceId);
+    
+    // Clean up old entries while we're here
+    this.cleanupRecentlyRecognizedFaces();
+    
+    return !!lastRecognized && (now - lastRecognized < this.RECOGNITION_MEMORY);
+  }
+  
+  /**
+   * Mark a face as recently recognized
+   */
+  private static markFaceAsRecognized(faceId: string): void {
+    this.recentlyRecognizedFaces.set(faceId, Date.now());
+  }
+  
+  /**
+   * Clean up old entries from the recentlyRecognizedFaces map
+   */
+  private static cleanupRecentlyRecognizedFaces(): void {
+    const now = Date.now();
+    for (const [faceId, timestamp] of this.recentlyRecognizedFaces.entries()) {
+      if (now - timestamp > this.RECOGNITION_MEMORY) {
+        this.recentlyRecognizedFaces.delete(faceId);
+      }
     }
   }
 
@@ -292,10 +334,26 @@ export class FaceDetectionService {
     if (!face.name) return;
     
     try {
-      // Capture a new image if one doesn't exist
+      // Ensure we have an image for the notification
       if (!face.image) {
         console.log('No image available for notification, skipping');
-        return;
+        
+        // Try to get the image from the video frame
+        const videoEl = document.querySelector('video');
+        if (videoEl && videoEl.readyState >= 2) { // Have enough data to grab a frame
+          const canvas = document.createElement('canvas');
+          canvas.width = videoEl.videoWidth;
+          canvas.height = videoEl.videoHeight;
+          const ctx = canvas.getContext('2d');
+          
+          if (ctx) {
+            ctx.drawImage(videoEl, 0, 0);
+            face.image = canvas.toDataURL('image/jpeg', 0.7); // Lower quality for smaller size
+          }
+        } else {
+          // If still no image, just continue without it
+          console.log('Could not capture video frame for notification');
+        }
       }
       
       console.log(`Sending notification for recognized face: ${face.name}`);

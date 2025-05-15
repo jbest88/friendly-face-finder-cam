@@ -14,6 +14,10 @@ export interface FaceRecognitionNotification {
 
 export class NotificationsService {
   private static channel: RealtimeChannel | null = null;
+  // Track recently recognized faces to prevent spam (face_id -> timestamp)
+  private static recentlyNotifiedFaces: Map<string, number> = new Map();
+  // How long to wait before sending another notification for the same face (ms)
+  private static NOTIFICATION_COOLDOWN = 60000; // 1 minute
 
   /**
    * Send a notification when a face is recognized
@@ -25,6 +29,23 @@ export class NotificationsService {
     notes?: string
   ): Promise<boolean> {
     try {
+      // If we have a face ID, check if we've recently sent a notification for this face
+      if (faceId) {
+        const now = Date.now();
+        const lastNotified = this.recentlyNotifiedFaces.get(faceId);
+        
+        if (lastNotified && now - lastNotified < this.NOTIFICATION_COOLDOWN) {
+          console.log(`Skipping notification for ${faceName} - cooldown period active`);
+          return false;
+        }
+        
+        // Update the timestamp for this face
+        this.recentlyNotifiedFaces.set(faceId, now);
+        
+        // Clean up old entries from the map
+        this.cleanupRecentlyNotifiedFaces();
+      }
+      
       console.log(`Sending recognition notification for ${faceName}`);
       
       const { data, error } = await supabase
@@ -48,6 +69,18 @@ export class NotificationsService {
     } catch (error) {
       console.error('Error sending notification:', error);
       return false;
+    }
+  }
+
+  /**
+   * Clean up old entries from the recentlyNotifiedFaces map
+   */
+  private static cleanupRecentlyNotifiedFaces(): void {
+    const now = Date.now();
+    for (const [faceId, timestamp] of this.recentlyNotifiedFaces.entries()) {
+      if (now - timestamp > this.NOTIFICATION_COOLDOWN) {
+        this.recentlyNotifiedFaces.delete(faceId);
+      }
     }
   }
 
@@ -80,7 +113,9 @@ export class NotificationsService {
           callback(notification);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
 
     // Return a function to unsubscribe
     return () => {

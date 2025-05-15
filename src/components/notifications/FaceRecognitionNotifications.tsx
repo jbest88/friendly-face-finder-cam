@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Bell, BellRing, Check, Trash } from 'lucide-react';
+import { Bell, BellRing, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { NotificationsService, FaceRecognitionNotification } from '@/services/NotificationsService';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -15,35 +15,39 @@ const FaceRecognitionNotifications: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const { toast } = useToast();
 
-  // Fetch unread notifications on component mount and when dependencies change
+  // Fetch unread notifications on component mount
   useEffect(() => {
     loadNotifications();
-  }, []);
-
-  // Subscribe to real-time notifications
-  useEffect(() => {
+    
+    // Subscribe to real-time notifications
     const unsubscribe = NotificationsService.subscribeToNotifications((notification) => {
+      console.log('New notification received in component:', notification);
+      
       // Add the new notification to the list
       setNotifications(prev => [notification, ...prev]);
       setUnreadCount(prev => prev + 1);
       
-      // Show a toast notification
-      toast({
-        title: `🔔 ${notification.face_name} recognized!`,
-        description: notification.notes || 'Person detected by camera',
-      });
+      // Show a toast notification (only show if the panel isn't already open)
+      // This prevents duplicate toasts when the user is already looking at notifications
+      if (!showNotifications) {
+        toast({
+          title: `🔔 ${notification.face_name} recognized!`,
+          description: notification.notes || 'Person detected by camera',
+        });
+      }
     });
     
     // Cleanup subscription on unmount
     return () => {
       unsubscribe();
     };
-  }, [toast]);
+  }, [toast, showNotifications]);
 
   const loadNotifications = async () => {
     setLoading(true);
     try {
       const unreadNotifications = await NotificationsService.getUnreadNotifications();
+      console.log('Loaded notifications:', unreadNotifications.length);
       setNotifications(unreadNotifications);
       setUnreadCount(unreadNotifications.length);
     } catch (error) {
