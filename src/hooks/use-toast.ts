@@ -125,7 +125,7 @@ export const reducer = (state: State, action: Action): State => {
   }
 };
 
-const listeners: React.Dispatch<Action>[] = [];
+const listeners: ((action: Action) => void)[] = [];
 
 let memoryState: State = { toasts: [] };
 
@@ -171,14 +171,19 @@ function useToast() {
   const [state, setState] = React.useState<State>(memoryState);
 
   React.useEffect(() => {
-    listeners.push(setState);
+    // Fix the type issue by using a proper type cast for the listener
+    const listener = (action: Action) => {
+      setState((prevState) => reducer(prevState, action));
+    };
+    
+    listeners.push(listener);
     return () => {
-      const index = listeners.indexOf(setState);
+      const index = listeners.indexOf(listener);
       if (index > -1) {
         listeners.splice(index, 1);
       }
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,
