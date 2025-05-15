@@ -2,6 +2,7 @@
 import React from 'react';
 import FaceDetectionCamera from '@/components/FaceDetectionCamera';
 import FaceRecognitionNotifications from '@/components/notifications/FaceRecognitionNotifications';
+import UserProfile from '@/components/UserProfile';
 
 const Index = () => {
   return (
@@ -11,7 +12,10 @@ const Index = () => {
           <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500">
             Face Recognition App
           </h1>
-          <FaceRecognitionNotifications />
+          <div className="flex items-center space-x-4">
+            <FaceRecognitionNotifications />
+            <UserProfile />
+          </div>
         </div>
         <p className="text-gray-300 text-center max-w-xl mx-auto">
           This app uses your device's camera to detect and analyze faces in real-time.

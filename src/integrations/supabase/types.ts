@@ -9,6 +9,30 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       recognition_notifications: {
         Row: {
           face_id: string | null
@@ -18,6 +42,7 @@ export type Database = {
           is_read: boolean
           notes: string | null
           recognized_at: string
+          user_id: string | null
         }
         Insert: {
           face_id?: string | null
@@ -27,6 +52,7 @@ export type Database = {
           is_read?: boolean
           notes?: string | null
           recognized_at?: string
+          user_id?: string | null
         }
         Update: {
           face_id?: string | null
@@ -36,6 +62,7 @@ export type Database = {
           is_read?: boolean
           notes?: string | null
           recognized_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -59,6 +86,7 @@ export type Database = {
           name: string | null
           notes: string | null
           notify_on_recognition: boolean | null
+          user_id: string | null
         }
         Insert: {
           age?: number | null
@@ -71,6 +99,7 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notify_on_recognition?: boolean | null
+          user_id?: string | null
         }
         Update: {
           age?: number | null
@@ -83,6 +112,7 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notify_on_recognition?: boolean | null
+          user_id?: string | null
         }
         Relationships: []
       }
