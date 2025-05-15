@@ -1,6 +1,7 @@
 
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface DetectedFace {
   detection: any; // Using 'any' temporarily to resolve TypeScript errors
@@ -13,6 +14,10 @@ export interface DetectedFace {
   image?: string;
   name?: string;
   notifyOnRecognition?: boolean;
+  isRecognized?: boolean;
+  matchedFaceId?: string;
+  similarity?: number;
+  notes?: string;
 }
 
 export class FaceDetectionService {
@@ -102,6 +107,144 @@ export class FaceDetectionService {
     }
   }
   
+  static async storeFaceInDatabase(face: DetectedFace): Promise<string | undefined> {
+    try {
+      if (!face.descriptor || !face.image) {
+        console.error('Cannot store face without descriptor and image');
+        return undefined;
+      }
+
+      const { data, error } = await supabase.from('stored_faces').insert({
+        name: face.name || 'Unknown',
+        descriptor: Array.from(face.descriptor),
+        image: face.image,
+        age: face.age,
+        gender: face.gender,
+        notify_on_recognition: face.notifyOnRecognition || false,
+        notes: face.notes || ''
+      }).select('id').single();
+
+      if (error) {
+        console.error('Error storing face in database:', error);
+        return undefined;
+      }
+
+      return data.id;
+    } catch (error) {
+      console.error('Error storing face in database:', error);
+      return undefined;
+    }
+  }
+
+  static async getFacesFromDatabase(): Promise<DetectedFace[]> {
+    try {
+      const { data, error } = await supabase.from('stored_faces').select('*');
+
+      if (error) {
+        console.error('Error fetching faces from database:', error);
+        return [];
+      }
+
+      // Convert from database format to DetectedFace format
+      return data.map(record => ({
+        id: record.id,
+        name: record.name,
+        descriptor: new Float32Array(record.descriptor),
+        image: record.image,
+        age: record.age,
+        gender: record.gender,
+        notifyOnRecognition: record.notify_on_recognition,
+        notes: record.notes,
+        timestamp: new Date(record.created_at),
+      }));
+    } catch (error) {
+      console.error('Error processing faces from database:', error);
+      return [];
+    }
+  }
+
+  static async updateFaceInDatabase(face: DetectedFace): Promise<boolean> {
+    try {
+      if (!face.id) return false;
+
+      const { error } = await supabase.from('stored_faces').update({
+        name: face.name,
+        notify_on_recognition: face.notifyOnRecognition,
+        notes: face.notes,
+        last_seen: new Date().toISOString()
+      }).eq('id', face.id);
+
+      return !error;
+    } catch (error) {
+      console.error('Error updating face in database:', error);
+      return false;
+    }
+  }
+
+  static async deleteFaceFromDatabase(faceId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase.from('stored_faces').delete().eq('id', faceId);
+      return !error;
+    } catch (error) {
+      console.error('Error deleting face from database:', error);
+      return false;
+    }
+  }
+
+  static compareFaces(detectedFace: DetectedFace, storedFaces: DetectedFace[]): DetectedFace | undefined {
+    try {
+      if (!detectedFace.descriptor || storedFaces.length === 0) return undefined;
+
+      let bestMatch: { face: DetectedFace, distance: number } | undefined;
+
+      for (const storedFace of storedFaces) {
+        if (!storedFace.descriptor) continue;
+
+        // Calculate Euclidean distance between face descriptors
+        const distance = this.calculateFaceDistance(
+          detectedFace.descriptor, 
+          storedFace.descriptor
+        );
+
+        // Lower distance = better match
+        // Threshold of 0.6 is a good starting point - can be adjusted
+        if (distance < 0.6 && (!bestMatch || distance < bestMatch.distance)) {
+          bestMatch = {
+            face: storedFace,
+            distance
+          };
+        }
+      }
+
+      if (bestMatch) {
+        return {
+          ...detectedFace,
+          isRecognized: true,
+          matchedFaceId: bestMatch.face.id,
+          name: bestMatch.face.name,
+          notes: bestMatch.face.notes,
+          notifyOnRecognition: bestMatch.face.notifyOnRecognition,
+          similarity: 1 - bestMatch.distance // Convert distance to similarity (0-1)
+        };
+      }
+
+      return undefined;
+    } catch (error) {
+      console.error('Error comparing faces:', error);
+      return undefined;
+    }
+  }
+
+  private static calculateFaceDistance(descriptor1: Float32Array, descriptor2: Float32Array): number {
+    let sum = 0;
+    for (let i = 0; i < descriptor1.length; i++) {
+      const diff = descriptor1[i] - descriptor2[i];
+      sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+  }
+
+  // Legacy methods for localStorage
   static loadSavedFaces(): DetectedFace[] {
     try {
       const saved = localStorage.getItem('savedFaces');

@@ -5,8 +5,11 @@ import ModelLoader from './face-detection/ModelLoader';
 import CameraControls from './face-detection/CameraControls';
 import FaceDetectionDisplay from './face-detection/FaceDetectionDisplay';
 import SavedFacesDialog from './face-detection/SavedFacesDialog';
+import RecognitionStatus from './face-detection/RecognitionStatus';
 import { FaceDetectionService, DetectedFace } from '../services/FaceDetectionService';
 import { CameraManager } from '../services/CameraManager';
+import { Button } from './ui/button';
+import { Save } from 'lucide-react';
 
 const FaceDetectionCamera = () => {
   const { toast } = useToast();
@@ -16,13 +19,16 @@ const FaceDetectionCamera = () => {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [detectedFaces, setDetectedFaces] = useState<DetectedFace[]>([]);
   const [savedFaces, setSavedFaces] = useState<DetectedFace[]>([]);
+  const [databaseFaces, setDatabaseFaces] = useState<DetectedFace[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [showSavedFaces, setShowSavedFaces] = useState(false);
+  const [processingFaces, setProcessingFaces] = useState(false);
 
-  // Load saved faces from localStorage on component mount
+  // Load saved faces from localStorage and database on component mount
   useEffect(() => {
     setSavedFaces(FaceDetectionService.loadSavedFaces());
+    loadDatabaseFaces();
     
     // Cleanup function
     return () => {
@@ -31,6 +37,15 @@ const FaceDetectionCamera = () => {
       }
     };
   }, []);
+
+  const loadDatabaseFaces = async () => {
+    try {
+      const faces = await FaceDetectionService.getFacesFromDatabase();
+      setDatabaseFaces(faces);
+    } catch (error) {
+      console.error('Error loading faces from database:', error);
+    }
+  };
 
   const handleModelsLoaded = () => {
     setModelsLoaded(true);
@@ -83,7 +98,7 @@ const FaceDetectionCamera = () => {
     }
   };
 
-  // Capture current face and save it
+  // Capture current face and save it to database
   const captureFace = async () => {
     if (detectedFaces.length === 0) {
       toast({
@@ -94,21 +109,28 @@ const FaceDetectionCamera = () => {
     }
     
     try {
+      setProcessingFaces(true);
+      
       // Capture the current frame from video
       if (!videoRef.current) return;
       
-      const newSavedFaces = FaceDetectionService.captureFaceImage(videoRef.current, detectedFaces);
+      const capturedFaces = FaceDetectionService.captureFaceImage(videoRef.current, detectedFaces);
       
-      // Add to saved faces
-      const updatedSavedFaces = [...savedFaces, ...newSavedFaces];
-      setSavedFaces(updatedSavedFaces);
+      // Save to database
+      for (const face of capturedFaces) {
+        await FaceDetectionService.storeFaceInDatabase(face);
+      }
       
-      // Save to localStorage
-      FaceDetectionService.saveFaces(updatedSavedFaces);
+      // Update local state
+      setSavedFaces(prev => [...prev, ...capturedFaces]);
+      FaceDetectionService.saveFaces([...savedFaces, ...capturedFaces]);
+      
+      // Refresh database faces
+      await loadDatabaseFaces();
       
       toast({
         title: "Face captured",
-        description: `Saved ${newSavedFaces.length} face(s) successfully`,
+        description: `Saved ${capturedFaces.length} face(s) to database`,
       });
     } catch (error) {
       console.error('Error capturing face:', error);
@@ -117,6 +139,8 @@ const FaceDetectionCamera = () => {
         title: "Capture failed",
         description: "Could not save the detected face",
       });
+    } finally {
+      setProcessingFaces(false);
     }
   };
 
@@ -127,12 +151,32 @@ const FaceDetectionCamera = () => {
     const detectFaces = async () => {
       if (!videoRef.current || !canvasRef.current || !isCameraActive || !modelsLoaded) return;
       
-      const detectedFaces = await FaceDetectionService.detectFaces(
+      const currentDetectedFaces = await FaceDetectionService.detectFaces(
         videoRef.current, 
         canvasRef.current
       );
       
-      setDetectedFaces(detectedFaces);
+      // If we have database faces, check for matches
+      if (databaseFaces.length > 0) {
+        const recognizedFaces = currentDetectedFaces.map(face => {
+          const match = FaceDetectionService.compareFaces(face, databaseFaces);
+          if (match) {
+            // If this face has notify_on_recognition set, show notification
+            if (match.notifyOnRecognition) {
+              toast({
+                title: `Recognized: ${match.name}`,
+                description: match.notes || "This person is in your database",
+              });
+            }
+            return match;
+          }
+          return face;
+        });
+        
+        setDetectedFaces(recognizedFaces);
+      } else {
+        setDetectedFaces(currentDetectedFaces);
+      }
       
       // Continue detection if camera is active
       if (isCameraActive && modelsLoaded) {
@@ -172,7 +216,7 @@ const FaceDetectionCamera = () => {
             onSwitchCamera={() => {}}
             onCaptureFace={() => {}}
             onViewSaved={() => setShowSavedFaces(true)}
-            savedCount={savedFaces.length}
+            savedCount={databaseFaces.length}
           />
         )}
       </div>
@@ -188,8 +232,29 @@ const FaceDetectionCamera = () => {
             onSwitchCamera={switchCamera}
             onCaptureFace={captureFace}
             onViewSaved={() => setShowSavedFaces(true)}
-            savedCount={savedFaces.length}
+            savedCount={databaseFaces.length}
           />
+
+          {detectedFaces.length > 0 && (
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              {detectedFaces.map((face) => (
+                <div key={face.id} className="space-y-2">
+                  <RecognitionStatus face={face} />
+                  {!face.isRecognized && (
+                    <Button
+                      size="sm"
+                      onClick={() => captureFace()}
+                      disabled={processingFaces}
+                      className="w-full"
+                    >
+                      <Save className="mr-2 h-4 w-4" /> 
+                      {processingFaces ? "Saving..." : "Save to Database"}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           
           <FaceDetectionDisplay detectedFaces={detectedFaces} />
         </>
@@ -199,6 +264,7 @@ const FaceDetectionCamera = () => {
         open={showSavedFaces}
         onOpenChange={setShowSavedFaces}
         savedFaces={savedFaces}
+        onUpdateFaces={loadDatabaseFaces}
       />
     </div>
   );
