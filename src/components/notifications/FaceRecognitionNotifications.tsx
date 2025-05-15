@@ -34,6 +34,9 @@ const FaceRecognitionNotifications: React.FC = () => {
           title: `🔔 ${notification.face_name} recognized!`,
           description: notification.notes || 'Person detected by camera',
         });
+        
+        // Show browser notification if permissions are granted
+        showBrowserNotification(notification);
       }
     });
     
@@ -113,6 +116,25 @@ const FaceRecognitionNotifications: React.FC = () => {
       month: 'short',
       day: 'numeric'
     }).format(date);
+  };
+  
+  // Function to show browser notifications
+  const showBrowserNotification = (notification: FaceRecognitionNotification) => {
+    // Check if browser supports notifications and permission is granted
+    if (!('Notification' in window)) {
+      return;
+    }
+    
+    if (Notification.permission === 'granted') {
+      const notificationOptions: NotificationOptions = {
+        body: notification.notes || `Person detected at ${new Date().toLocaleTimeString()}`,
+        icon: notification.image || '/favicon.ico',
+        tag: notification.id // Prevents duplicate notifications
+      };
+      
+      new Notification(`${notification.face_name} recognized!`, notificationOptions);
+    }
+    // Don't request permissions here - we'll do that in the profile settings
   };
 
   return (

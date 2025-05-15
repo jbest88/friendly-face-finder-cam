@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ArrowLeft } from 'lucide-react';
 
 const Profile: React.FC = () => {
   const { user, profile, signOut } = useAuth();
@@ -66,7 +67,17 @@ const Profile: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black p-4">
       <div className="max-w-3xl mx-auto pt-10">
-        <h1 className="text-3xl font-bold text-white mb-6">Profile Settings</h1>
+        <div className="flex items-center mb-6">
+          <Button 
+            variant="ghost" 
+            className="text-white mr-4"
+            onClick={() => navigate('/')}
+          >
+            <ArrowLeft className="h-5 w-5 mr-1" />
+            Back
+          </Button>
+          <h1 className="text-3xl font-bold text-white">Profile Settings</h1>
+        </div>
         
         <Card className="bg-black border-gray-800">
           <CardHeader>
@@ -110,6 +121,25 @@ const Profile: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500">Email cannot be changed</p>
               </div>
+              
+              <div className="space-y-2">
+                <Label className="text-gray-300">Push Notifications</Label>
+                <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-md p-3">
+                  <div>
+                    <p className="text-white text-sm font-medium">Browser Notifications</p>
+                    <p className="text-gray-400 text-xs">Get notified when faces are recognized</p>
+                  </div>
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    className="bg-gray-700 hover:bg-gray-600"
+                    onClick={() => requestNotificationPermission()}
+                  >
+                    Enable
+                  </Button>
+                </div>
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 mt-2"
@@ -135,6 +165,28 @@ const Profile: React.FC = () => {
       </div>
     </div>
   );
+};
+
+// Function to request notification permissions
+const requestNotificationPermission = async () => {
+  if (!('Notification' in window)) {
+    alert('This browser does not support desktop notifications');
+    return;
+  }
+  
+  try {
+    const permission = await Notification.requestPermission();
+    
+    if (permission === 'granted') {
+      // Show a test notification
+      new Notification('Notifications Enabled', {
+        body: 'You will now receive face recognition alerts',
+        icon: '/favicon.ico'
+      });
+    }
+  } catch (error) {
+    console.error('Error requesting notification permission:', error);
+  }
 };
 
 export default Profile;

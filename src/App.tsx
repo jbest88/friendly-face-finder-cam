@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Auth/Login";
 import Signup from "./pages/Auth/Signup";
 import Profile from "./pages/Auth/Profile";
+import SavedFaces from "./pages/SavedFaces";
 import NotFound from "./pages/NotFound";
 
 // Create a new QueryClient instance
@@ -28,6 +29,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/saved-faces" element={<SavedFaces />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
