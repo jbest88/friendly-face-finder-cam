@@ -8,19 +8,7 @@ import {
   DialogDescription 
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
-
-interface DetectedFace {
-  detection: any;
-  expressions?: any;
-  age?: number;
-  gender?: string;
-  descriptor?: Float32Array;
-  timestamp: Date;
-  id: string;
-  image?: string;
-  name?: string;
-  notifyOnRecognition?: boolean;
-}
+import { DetectedFace } from '@/services/FaceDetectionService';
 
 interface SavedFacesDialogProps {
   open: boolean;

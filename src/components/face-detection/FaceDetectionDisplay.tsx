@@ -1,23 +1,7 @@
 
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-
-interface FaceExpressions {
-  [key: string]: number;
-}
-
-interface DetectedFace {
-  detection: any;
-  expressions?: FaceExpressions;
-  age?: number;
-  gender?: string;
-  descriptor?: Float32Array;
-  timestamp: Date;
-  id: string;
-  image?: string;
-  name?: string;
-  notifyOnRecognition?: boolean;
-}
+import { DetectedFace } from '@/services/FaceDetectionService';
 
 interface FaceDetectionDisplayProps {
   detectedFaces: DetectedFace[];
