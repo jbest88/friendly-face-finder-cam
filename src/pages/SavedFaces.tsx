@@ -24,8 +24,6 @@ const SavedFaces: React.FC = () => {
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -44,20 +42,30 @@ const SavedFaces: React.FC = () => {
 
   // Load face-api.js models when component mounts
   useEffect(() => {
-  const loadModels = async () => {
-    const MODEL_URL = '/models';
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-    ]);
-    setModelsLoaded(true); // <---- Set this when done!
-  };
-  loadModels();
-}, []);
+    const loadModels = async () => {
+      try {
+        console.log('Loading face detection models...');
+        const MODEL_URL = '/models';
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+        ]);
+        console.log('Face detection models loaded successfully');
+      } catch (error) {
+        console.error('Error loading face detection models:', error);
+        toast({
+          title: "Error",
+          description: "Could not load face detection models",
+          variant: "destructive"
+        });
+      }
+    };
 
+    loadModels();
+  }, [toast]);
 
   const loadFaces = async () => {
     setIsLoading(true);
@@ -133,112 +141,103 @@ const SavedFaces: React.FC = () => {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-  if (!modelsLoaded) {
-    toast({
-      title: "Models still loading",
-      description: "Please wait for face recognition models to finish loading.",
-      variant: "destructive"
-    });
-    return;
-  }
-  const files = event.target.files;
-  if (!files || files.length === 0) return;
-
-  setIsUploading(true);
-
-  try {
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      console.log(`Processing file: ${file.name}`);
-
-      // Load the image and ensure it's fully loaded before processing
-      const image = await loadImage(file);
-      console.log(`Image loaded, dimensions: ${image.width}x${image.height}`);
-
-      // Create a temporary canvas
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx) {
-        throw new Error('Cannot get canvas context');
-      }
-
-      // Draw the image to canvas
-      ctx.drawImage(image, 0, 0, image.width, image.height);
-
-      // Convert image to base64
-      const imageData = canvas.toDataURL('image/jpeg', 0.8);
-      console.log('Image converted to base64');
-
-      // Create proper options for the face detector
-      const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
-
-      console.log('Starting face detection...');
-      const detections = await faceapi
-        .detectAllFaces(image, detectorOptions)
-        .withFaceLandmarks()
-        .withFaceExpressions()
-        .withAgeAndGender()
-        .withFaceDescriptors();
-
-      console.log(`Detected ${detections.length} faces in uploaded image`);
-
-      if (detections.length === 0) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        console.log(`Processing file: ${file.name}`);
+        
+        // Load the image and ensure it's fully loaded before processing
+        const image = await loadImage(file);
+        console.log(`Image loaded, dimensions: ${image.width}x${image.height}`);
+        
+        // Create a temporary canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          throw new Error('Cannot get canvas context');
+        }
+        
+        // Draw the image to canvas
+        ctx.drawImage(image, 0, 0, image.width, image.height);
+        
+        // Convert image to base64
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        console.log('Image converted to base64');
+        
+        // Create proper options for the face detector
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
+        
+        console.log('Starting face detection...');
+        const detections = await faceapi
+          .detectAllFaces(image, detectorOptions)
+          .withFaceLandmarks()
+          .withFaceExpressions()
+          .withAgeAndGender()
+          .withFaceDescriptors();
+          
+        console.log(`Detected ${detections.length} faces in uploaded image`);
+        
+        if (detections.length === 0) {
+          toast({
+            title: "No faces detected",
+            description: `No faces could be detected in ${file.name}`,
+            variant: "destructive"
+          });
+          continue;
+        }
+        
+        // For each detected face, create a DetectedFace object
+        for (const detection of detections) {
+          const face: DetectedFace = {
+            detection: detection.detection,
+            expressions: detection.expressions,
+            age: detection.age,
+            gender: detection.gender,
+            descriptor: detection.descriptor,
+            timestamp: new Date(),
+            id: generateTemporaryId(),
+            image: imageData,
+            name: file.name.split('.')[0] // Use filename as default name
+          };
+          
+          // Store face in database
+          await FaceDetectionService.storeFaceInDatabase(face);
+          console.log(`Face stored in database with name: ${face.name}`);
+        }
+        
         toast({
-          title: "No faces detected",
-          description: `No faces could be detected in ${file.name}`,
-          variant: "destructive"
+          title: "Success",
+          description: `Processed ${detections.length} faces from ${file.name}`,
         });
-        continue;
       }
-
-      // For each detected face, create a DetectedFace object
-      for (const detection of detections) {
-        const face: DetectedFace = {
-          detection: detection.detection,
-          expressions: detection.expressions,
-          age: detection.age,
-          gender: detection.gender,
-          descriptor: detection.descriptor,
-          timestamp: new Date(),
-          id: generateTemporaryId(),
-          image: imageData,
-          name: file.name.split('.')[0] // Use filename as default name
-        };
-
-        // Store face in database
-        await FaceDetectionService.storeFaceInDatabase(face);
-        console.log(`Face stored in database with name: ${face.name}`);
+      
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
-
+      
+      // Refresh faces list
+      await loadFaces();
+      
+    } catch (error) {
+      console.error('Error processing uploaded image:', error);
       toast({
-        title: "Success",
-        description: `Processed ${detections.length} faces from ${file.name}`,
+        title: "Error",
+        description: "Could not process the uploaded image: " + (error as Error).message,
+        variant: "destructive"
       });
+    } finally {
+      setIsUploading(false);
     }
-
-    // Clear the file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-
-    // Refresh faces list
-    await loadFaces();
-
-  } catch (error) {
-    console.error('Error processing uploaded image:', error);
-    toast({
-      title: "Error",
-      description: "Could not process the uploaded image: " + (error as Error).message,
-      variant: "destructive"
-    });
-  } finally {
-    setIsUploading(false);
-  }
-};
-
+  };
   
   // Helper function to load an image with proper Promise handling
   const loadImage = (file: File): Promise<HTMLImageElement> => {
