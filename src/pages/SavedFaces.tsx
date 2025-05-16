@@ -145,8 +145,12 @@ const SavedFaces: React.FC = () => {
         // Convert image to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
         
-        // Create TinyFaceDetectorOptions correctly - based on face-api.js types
-        const detectorOptions = new faceapi.TinyFaceDetectorOptions();
+        // Create TinyFaceDetectorOptions correctly with proper parameters
+        // The constructor expects an object with inputSize, scoreThreshold, etc.
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 320,
+          scoreThreshold: 0.5
+        });
         
         // Detect faces in the image
         const detections = await faceapi
