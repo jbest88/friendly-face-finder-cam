@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -146,10 +147,9 @@ const SavedFaces: React.FC = () => {
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
         
         // Create TinyFaceDetectorOptions correctly with proper parameters
-        // The constructor expects an object with inputSize, scoreThreshold, etc.
+        // The constructor expects an object with just inputSize according to the type definition
         const detectorOptions = new faceapi.TinyFaceDetectorOptions({
-          inputSize: 320,
-          scoreThreshold: 0.5
+          inputSize: 320
         });
         
         // Detect faces in the image
