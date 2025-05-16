@@ -154,12 +154,15 @@ const SavedFaces: React.FC = () => {
         };
         
         // Detect faces in the image - pass the options directly to detectAllFaces
-        const detections = await faceapi
-          .detectAllFaces(image, new faceapi.TinyFaceDetectorOptions(detectorOptions))
-          .withFaceLandmarks()
-          .withFaceExpressions()
-          .withAgeAndGender()
-          .withFaceDescriptors();
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions(320);
+
+const detections = await faceapi
+  .detectAllFaces(image, detectorOptions)
+  .withFaceLandmarks()
+  .withFaceExpressions()
+  .withAgeAndGender()
+  .withFaceDescriptors();
+
           
         console.log(`Detected ${detections.length} faces in uploaded image`);
         
