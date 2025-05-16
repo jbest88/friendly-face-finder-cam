@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
-import * as faceapi from 'face-api.js';
+// Change the import to use @vladmandic/face-api instead of face-api.js
+import * as faceapi from '@vladmandic/face-api';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -22,11 +23,11 @@ const ModelLoader: React.FC<ModelLoaderProps> = ({ onModelsLoaded }) => {
         
         // Try different CDNs based on previous attempts
         if (modelLoadAttempts === 0) {
-          MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+          MODEL_URL = '/models/'; // First try local models
         } else if (modelLoadAttempts === 1) {
-          MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
+          MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.6/model/';
         } else {
-          MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/';
+          MODEL_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model/';
         }
         
         toast({
@@ -36,15 +37,10 @@ const ModelLoader: React.FC<ModelLoaderProps> = ({ onModelsLoaded }) => {
         
         // Using direct import for faceapi.nets to avoid TypeScript errors
         await Promise.all([
-          // @ts-ignore - Ignoring TypeScript errors for faceapi.nets properties
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          // @ts-ignore
           faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          // @ts-ignore
           faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-          // @ts-ignore
           faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-          // @ts-ignore
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
         ]);
         

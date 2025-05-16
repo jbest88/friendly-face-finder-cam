@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -5,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Upload, User, Users } from 'lucide-react';
+// Change import from face-api.js to @vladmandic/face-api
+import * as faceapi from '@vladmandic/face-api';
 import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FaceEditor from '@/components/face-detection/FaceEditor';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import ModelLoader from '@/components/face-detection/ModelLoader';
 import PersonDetailDialog from '@/components/face-detection/PersonDetailDialog';

@@ -1,4 +1,5 @@
-import * as faceapi from 'face-api.js';
+// Change import from face-api.js to @vladmandic/face-api
+import * as faceapi from '@vladmandic/face-api';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
 import { NotificationsService } from './NotificationsService';
@@ -42,11 +43,9 @@ export class FaceDetectionService {
       height: videoElement.videoHeight
     };
     
-    // @ts-ignore - Ignoring TypeScript error for matchDimensions
     faceapi.matchDimensions(canvasElement, displaySize);
     
     try {
-      // @ts-ignore - Ignoring TypeScript errors for detectAllFaces and TinyFaceDetectorOptions
       const detections = await faceapi
         .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
         .withFaceLandmarks()
@@ -54,16 +53,13 @@ export class FaceDetectionService {
         .withAgeAndGender()
         .withFaceDescriptors();
       
-      // @ts-ignore - Ignoring TypeScript error for resizeResults
       const resizedDetections = faceapi.resizeResults(detections, displaySize);
       
       // Draw face detection results on canvas
       const ctx = canvasElement.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        // @ts-ignore - Ignoring TypeScript errors for draw methods
         faceapi.draw.drawDetections(canvasElement, resizedDetections);
-        // @ts-ignore - Ignoring TypeScript errors for draw methods
         faceapi.draw.drawFaceLandmarks(canvasElement, resizedDetections);
       }
       
