@@ -29,7 +29,7 @@ const FaceDetectionCamera = () => {
   // Load saved faces from localStorage and database on component mount
   useEffect(() => {
     const loadFaces = async () => {
-      setSavedFaces(FaceDetectionService.loadSavedFaces());
+      setSavedFaces(FaceDetectionService.getFacesFromLocalStorage());
       await loadDatabaseFaces();
       console.log('Face data loaded on component mount');
     };

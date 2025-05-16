@@ -1,3 +1,4 @@
+
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
