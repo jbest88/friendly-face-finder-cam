@@ -24,6 +24,8 @@ const SavedFaces: React.FC = () => {
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -42,30 +44,20 @@ const SavedFaces: React.FC = () => {
 
   // Load face-api.js models when component mounts
   useEffect(() => {
-    const loadModels = async () => {
-      try {
-        console.log('Loading face detection models...');
-        const MODEL_URL = '/models';
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-        ]);
-        console.log('Face detection models loaded successfully');
-      } catch (error) {
-        console.error('Error loading face detection models:', error);
-        toast({
-          title: "Error",
-          description: "Could not load face detection models",
-          variant: "destructive"
-        });
-      }
-    };
+  const loadModels = async () => {
+    const MODEL_URL = '/models';
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+    ]);
+    setModelsLoaded(true); // <---- Set this when done!
+  };
+  loadModels();
+}, []);
 
-    loadModels();
-  }, [toast]);
 
   const loadFaces = async () => {
     setIsLoading(true);
@@ -141,6 +133,14 @@ const SavedFaces: React.FC = () => {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  if (!modelsLoaded) {
+    toast({
+      title: "Models still loading",
+      description: "Please wait for face recognition models to finish loading.",
+      variant: "destructive"
+    });
+    return;
+  }=> {
     const files = event.target.files;
     if (!files || files.length === 0) return;
     
