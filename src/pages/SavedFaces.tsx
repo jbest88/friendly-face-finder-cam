@@ -139,14 +139,15 @@ const SavedFaces: React.FC = () => {
         // Use TinyFaceDetectorOptions correctly:
         // No arguments = default, or you can supply size/scoreThreshold as individual arguments
         // Example: new faceapi.TinyFaceDetectorOptions(320, 0.5)
-        const detectorOptions = new faceapi.TinyFaceDetectorOptions({inputSize:320}); // Use defaults or add args
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
 
-        const detections = await faceapi
-          .detectAllFaces(image, detectorOptions)
-          .withFaceLandmarks()
-          .withFaceExpressions()
-          .withAgeAndGender()
-          .withFaceDescriptors();
+const detections = await faceapi
+  .detectAllFaces(image, detectorOptions)
+  .withFaceLandmarks()
+  .withFaceExpressions()
+  .withAgeAndGender()
+  .withFaceDescriptors();
+
 
         console.log(`Detected ${detections.length} faces in uploaded image`);
 
