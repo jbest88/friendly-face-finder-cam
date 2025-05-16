@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Person, PersonService } from '@/services/PersonService';
-import { DetectedFace } from '@/services/FaceDetectionService';
+import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
 import FaceEditor from './FaceEditor';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { Trash2, Edit } from 'lucide-react';
+import { Trash2, Edit, ImagePlus } from 'lucide-react';
+import * as faceapi from '@vladmandic/face-api';
+import { generateTemporaryId } from '@/utils/idGenerator';
 
 interface PersonDetailDialogProps {
   personId: string | null;
@@ -26,6 +29,9 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
   const [person, setPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
+  const [isAddingImage, setIsAddingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Load person data when dialog opens
   useEffect(() => {
@@ -123,6 +129,107 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
       });
     }
   };
+
+  const handleAddImageClick = (personId: string) => {
+    setIsAddingImage(true);
+    // Use timeout to ensure the DOM is updated before clicking
+    setTimeout(() => {
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+    }, 100);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0 || !person) return;
+
+    setIsProcessing(true);
+    toast({
+      title: "Processing images",
+      description: "Analyzing faces in uploaded images..."
+    });
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Create image element from file
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error(`Failed to load image: ${file.name}`));
+          image.src = URL.createObjectURL(file);
+        });
+
+        // Detect face in the image
+        const detection = await faceapi.detectSingleFace(
+          img, 
+          new faceapi.TinyFaceDetectorOptions({ inputSize: 320 })
+        )
+          .withFaceLandmarks()
+          .withFaceExpressions()
+          .withAgeAndGender()
+          .withFaceDescriptor();
+
+        if (!detection) {
+          toast({
+            title: "No face detected",
+            description: `No faces found in "${file.name}"`,
+            variant: "destructive"
+          });
+          continue;
+        }
+
+        // Convert to base64 for storage
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0);
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+        // Create face object
+        const face: DetectedFace = {
+          detection: detection.detection,
+          expressions: detection.expressions,
+          age: detection.age,
+          gender: detection.gender,
+          descriptor: detection.descriptor,
+          timestamp: new Date(),
+          id: generateTemporaryId(),
+          image: imageData,
+          name: person.name,
+          personId: person.id,
+          notifyOnRecognition: person.notifyOnRecognition,
+          notes: person.notes
+        };
+
+        // Store the face
+        await FaceDetectionService.storeFaceInDatabase(face);
+      }
+
+      // Reload person data to show new images
+      await loadPersonData(person.id);
+      
+      toast({
+        title: "Images added",
+        description: `Successfully added new images to ${person.name}`
+      });
+    } catch (error) {
+      console.error('Error processing image:', error);
+      toast({
+        title: "Error",
+        description: `Failed to process images: ${(error as Error).message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessing(false);
+      setIsAddingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
   
   if (loading) {
     return (
@@ -183,15 +290,36 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
             </DialogTitle>
             <DialogDescription className="text-gray-400">
               {person.faces ? `${person.faces.length} stored face images` : 'No face images stored'}
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="ml-4"
-                onClick={() => setEditingFace(personAsFace)}
-              >
-                <Edit className="h-4 w-4 mr-1" />
-                Edit Person Details
-              </Button>
+              <div className="flex space-x-2 mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setEditingFace(personAsFace)}
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  Edit Person Details
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleAddImageClick(person.id)}
+                  disabled={isProcessing}
+                >
+                  <ImagePlus className="h-4 w-4 mr-1" />
+                  {isProcessing ? "Processing..." : "Add Images"}
+                </Button>
+                
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                />
+              </div>
             </DialogDescription>
           </DialogHeader>
           
@@ -280,6 +408,7 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
               face={editingFace} 
               onSave={handleSaveFace} 
               onDelete={handleDeletePerson} 
+              onAddImage={handleAddImageClick}
             />
           </DialogContent>
         </Dialog>

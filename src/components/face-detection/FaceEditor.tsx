@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,15 +7,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { DetectedFace } from '@/services/FaceDetectionService';
-import { Trash2 } from 'lucide-react';
+import { ImagePlus, Trash2 } from 'lucide-react';
 
 interface FaceEditorProps {
   face: DetectedFace;
   onSave: (updatedFace: DetectedFace) => void;
   onDelete: (faceId: string) => void;
+  onAddImage?: (personId: string) => void;
 }
 
-const FaceEditor: React.FC<FaceEditorProps> = ({ face, onSave, onDelete }) => {
+const FaceEditor: React.FC<FaceEditorProps> = ({ face, onSave, onDelete, onAddImage }) => {
   const [name, setName] = React.useState(face.name || 'Unknown');
   const [notes, setNotes] = React.useState(face.notes || '');
   const [notifyOnRecognition, setNotifyOnRecognition] = React.useState(face.notifyOnRecognition || false);
@@ -81,6 +82,19 @@ const FaceEditor: React.FC<FaceEditorProps> = ({ face, onSave, onDelete }) => {
           />
           <Label htmlFor="notify">Notify when recognized</Label>
         </div>
+        
+        {face.personId && onAddImage && (
+          <div className="mt-4">
+            <Button 
+              onClick={() => onAddImage(face.personId!)} 
+              variant="outline"
+              className="w-full"
+            >
+              <ImagePlus className="h-4 w-4 mr-2" />
+              Add More Images to This Person
+            </Button>
+          </div>
+        )}
         
         {face.age && (
           <div className="text-sm text-gray-500">
