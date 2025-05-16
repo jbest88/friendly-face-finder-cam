@@ -11,8 +11,7 @@ import FaceEditor from '@/components/face-detection/FaceEditor';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
-
-const MODEL_URL = '/models';
+import ModelLoader from '@/components/face-detection/ModelLoader'; // Use your actual path
 
 const SavedFaces: React.FC = () => {
   const { user, loading } = useAuth();
@@ -24,8 +23,8 @@ const SavedFaces: React.FC = () => {
   const [activeTab, setActiveTab] = useState('database');
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -34,31 +33,7 @@ const SavedFaces: React.FC = () => {
     }
   }, [user, loading, navigate]);
 
-  // Load face-api.js models when component mounts
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-        ]);
-        setModelsLoaded(true);
-        console.log('Face-api.js models loaded!');
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Could not load face detection models. Check your /models folder.",
-          variant: "destructive"
-        });
-      }
-    };
-    loadModels();
-  }, [toast]);
-
-  // Load faces when user changes
+  // Load faces when component mounts
   useEffect(() => {
     if (user) {
       loadFaces();
@@ -74,6 +49,7 @@ const SavedFaces: React.FC = () => {
       const localStorageFaces = FaceDetectionService.getFacesFromLocalStorage();
       setLocalFaces(localStorageFaces);
     } catch (error) {
+      console.error('Error loading faces:', error);
       toast({
         title: "Error",
         description: "Could not load saved faces",
@@ -87,55 +63,67 @@ const SavedFaces: React.FC = () => {
   const handleSaveFace = async (updatedFace: DetectedFace) => {
     try {
       const success = await FaceDetectionService.updateFaceInDatabase(updatedFace);
+
       if (success) {
-        toast({ title: "Success", description: `Updated ${updatedFace.name}` });
+        toast({
+          title: "Success",
+          description: `Updated information for ${updatedFace.name}`,
+        });
         loadFaces();
         setEditingFace(null);
       } else {
         throw new Error("Failed to update face");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Could not update face info", variant: "destructive" });
+      console.error('Error updating face:', error);
+      toast({
+        title: "Error",
+        description: "Could not update face information",
+        variant: "destructive"
+      });
     }
   };
 
   const handleDeleteFace = async (faceId: string) => {
     try {
       const success = await FaceDetectionService.deleteFaceFromDatabase(faceId);
+
       if (success) {
-        toast({ title: "Success", description: "Face deleted" });
+        toast({
+          title: "Success",
+          description: "Face deleted successfully",
+        });
         loadFaces();
         setEditingFace(null);
       } else {
         throw new Error("Failed to delete face");
       }
     } catch (error) {
-      toast({ title: "Error", description: "Could not delete face", variant: "destructive" });
+      console.error('Error deleting face:', error);
+      toast({
+        title: "Error",
+        description: "Could not delete face",
+        variant: "destructive"
+      });
     }
   };
 
   const handleUploadClick = () => {
-    if (fileInputRef.current && modelsLoaded) {
+    if (fileInputRef.current) {
       fileInputRef.current.click();
-    } else if (!modelsLoaded) {
-      toast({
-        title: "Models loading",
-        description: "Wait for AI models to finish loading before uploading.",
-        variant: "destructive"
-      });
     }
   };
 
+  // --- Main face upload handler ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!modelsLoaded) {
       toast({
         title: "Models still loading",
-        description: "Wait for face recognition models to finish loading.",
+        description: "Please wait for AI models to finish loading.",
         variant: "destructive"
       });
       return;
     }
-
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
@@ -145,63 +133,71 @@ const SavedFaces: React.FC = () => {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        // 1. Load the image
-        const image = await loadImage(file);
+        // Load as image
+        const img = new Image();
+        const loadPromise = new Promise<HTMLImageElement>((resolve, reject) => {
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+        });
+        img.src = URL.createObjectURL(file);
+        await loadPromise;
 
-        // 2. Create a canvas
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Cannot get canvas context');
-        ctx.drawImage(image, 0, 0, image.width, image.height);
-
-        // 3. Convert image to base64 for storage
-        const imageData = canvas.toDataURL('image/jpeg', 0.8);
-
-        // 4. Detect faces
-        const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
-        const detections = await faceapi
-          .detectAllFaces(image, detectorOptions)
+        // Face detection (single face, match camera workflow!)
+        const detection = await faceapi
+          .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
           .withFaceLandmarks()
-          .withFaceExpressions()
-          .withAgeAndGender()
-          .withFaceDescriptors();
+          .withFaceDescriptor();
 
-        if (!detections || detections.length === 0) {
+        if (!detection) {
           toast({
-            title: "No faces detected",
-            description: `No faces detected in "${file.name}". Try a clearer or closer face shot.`,
+            title: "No face detected",
+            description: `No faces detected in "${file.name}"`,
             variant: "destructive"
           });
           continue;
         }
 
-        // 5. Save all detected faces
-        for (const detection of detections) {
-          const face: DetectedFace = {
-            detection: detection.detection,
-            expressions: detection.expressions,
-            age: detection.age,
-            gender: detection.gender,
-            descriptor: detection.descriptor,
-            timestamp: new Date(),
-            id: generateTemporaryId(),
-            image: imageData,
-            name: file.name.split('.')[0]
-          };
-          await FaceDetectionService.storeFaceInDatabase(face);
-        }
+        // Optional: Get Age/Gender/Expressions (uncomment if wanted)
+        // const detectionFull = await faceapi
+        //   .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+        //   .withFaceLandmarks()
+        //   .withFaceExpressions()
+        //   .withAgeAndGender()
+        //   .withFaceDescriptor();
+
+        // Convert to base64 for storage
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0);
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+        const face: DetectedFace = {
+          detection: detection.detection,
+          expressions: {}, // Add if you use them
+          age: null,       // Add if you use them
+          gender: null,    // Add if you use them
+          descriptor: detection.descriptor,
+          timestamp: new Date(),
+          id: generateTemporaryId(),
+          image: imageData,
+          name: file.name.split('.')[0]
+        };
+
+        await FaceDetectionService.storeFaceInDatabase(face);
 
         toast({
-          title: "Success",
-          description: `Processed ${detections.length} faces from ${file.name}`,
+          title: "Face uploaded",
+          description: `Face saved from "${file.name}"`,
         });
       }
 
+      // Reset file input
       if (fileInputRef.current) fileInputRef.current.value = "";
       await loadFaces();
+
     } catch (error) {
+      console.error('Error processing uploaded image:', error);
       toast({
         title: "Error",
         description: "Could not process the uploaded image: " + (error as Error).message,
@@ -212,47 +208,7 @@ const SavedFaces: React.FC = () => {
     }
   };
 
-  // Helper to load image from file
-  const loadImage = (file: File): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = (e) => reject(e);
-      img.src = URL.createObjectURL(file);
-    });
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex items-center justify-center">
-        <p className="text-xl">Loading...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col items-center justify-center p-4">
-        <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500 mb-6">
-          Face Recognition App
-        </h1>
-        <p className="text-center mb-8 max-w-md">
-          Please log in or sign up to use the face recognition features.
-        </p>
-        <div className="flex gap-4">
-          <Button onClick={() => navigate('/login')}
-            className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600">
-            Log In
-          </Button>
-          <Button onClick={() => navigate('/signup')}
-            variant="outline"
-            className="text-white border-gray-700 hover:bg-gray-800">
-            Sign Up
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
+  // --- Render faces helper ---
   const renderFacesList = (faces: DetectedFace[]) => {
     if (isLoading) {
       return (
@@ -261,6 +217,7 @@ const SavedFaces: React.FC = () => {
         </div>
       );
     }
+
     if (faces.length === 0) {
       return (
         <div className="text-center py-8">
@@ -268,6 +225,7 @@ const SavedFaces: React.FC = () => {
         </div>
       );
     }
+
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
         {faces.map((face, index) => (
@@ -291,16 +249,6 @@ const SavedFaces: React.FC = () => {
               <p className="text-sm mb-1 text-gray-300">
                 <span className="font-medium">Captured:</span> {face.timestamp.toString().substring(0, 24)}
               </p>
-              {face.age && (
-                <p className="text-sm mb-1 text-gray-300">
-                  <span className="font-medium">Age:</span> ~{Math.round(face.age)} years
-                </p>
-              )}
-              {face.gender && (
-                <p className="text-sm mb-1 text-gray-300">
-                  <span className="font-medium">Gender:</span> {face.gender}
-                </p>
-              )}
               <Button
                 variant="outline"
                 className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
@@ -315,8 +263,51 @@ const SavedFaces: React.FC = () => {
     );
   };
 
+  // Loading or login prompt
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex items-center justify-center">
+        <p className="text-xl">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col items-center justify-center p-4">
+        <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500 mb-6">
+          Face Recognition App
+        </h1>
+        <p className="text-center mb-8 max-w-md">
+          Please log in or sign up to use the face recognition features.
+        </p>
+        <div className="flex gap-4">
+          <Button
+            onClick={() => navigate('/login')}
+            className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
+          >
+            Log In
+          </Button>
+          <Button
+            onClick={() => navigate('/signup')}
+            variant="outline"
+            className="text-white border-gray-700 hover:bg-gray-800"
+          >
+            Sign Up
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- MAIN RENDER ---
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4">
+      {/* ModelLoader overlays while models load */}
+      {!modelsLoaded && (
+        <ModelLoader onModelsLoaded={() => setModelsLoaded(true)} />
+      )}
+
       <div className="max-w-6xl mx-auto pt-10">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center">
@@ -330,6 +321,7 @@ const SavedFaces: React.FC = () => {
             </Button>
             <h1 className="text-3xl font-bold text-white">Saved Faces</h1>
           </div>
+
           <div>
             <input
               type="file"
@@ -338,35 +330,41 @@ const SavedFaces: React.FC = () => {
               accept="image/*"
               multiple
               className="hidden"
+              disabled={!modelsLoaded}
             />
             <Button
               onClick={handleUploadClick}
               className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
               disabled={isUploading || !modelsLoaded}
             >
-              {isUploading
-                ? <>Processing...</>
-                : <>
+              {isUploading ? (
+                <>Processing...</>
+              ) : (
+                <>
                   <Upload className="h-4 w-4 mr-2" />
                   Upload Faces
                 </>
-              }
+              )}
             </Button>
           </div>
         </div>
+
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-2 mb-4">
             <TabsTrigger value="database">Database ({databaseFaces.length})</TabsTrigger>
             <TabsTrigger value="local">Local Storage ({localFaces.length})</TabsTrigger>
           </TabsList>
+
           <TabsContent value="database">
             {renderFacesList(databaseFaces)}
           </TabsContent>
+
           <TabsContent value="local">
             {renderFacesList(localFaces)}
           </TabsContent>
         </Tabs>
       </div>
+
       {editingFace && (
         <Dialog open={!!editingFace} onOpenChange={(open) => !open && setEditingFace(null)}>
           <DialogContent className="sm:max-w-lg bg-gray-900 text-white">
