@@ -111,6 +111,20 @@ const SavedFaces: React.FC = () => {
       fileInputRef.current.click();
     }
   };
+useEffect(() => {
+  // Load all needed face-api.js models if not already loaded
+  const loadModels = async () => {
+    const MODEL_URL = '/models'; // Adjust path as needed (e.g., '/models' in public/)
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+    ]);
+  };
+  loadModels();
+}, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
