@@ -140,7 +140,7 @@ const SavedFaces: React.FC = () => {
       variant: "destructive"
     });
     return;
-  }=> {
+  
     const files = event.target.files;
     if (!files || files.length === 0) return;
     
