@@ -148,11 +148,7 @@ const SavedFaces: React.FC = () => {
         
         // Create detector options - FIXED: Direct usage without constructor
         // The TinyFaceDetectorOptions is likely not a class constructor in this context
-        // so we'll use it directly as an object
-        const detectorOptions = {
-          inputSize: 320
-        };
-        
+        // so we'll use it directly as an object        
         // Detect faces in the image - pass the options directly to detectAllFaces
         const detectorOptions = new faceapi.TinyFaceDetectorOptions(320);
 
