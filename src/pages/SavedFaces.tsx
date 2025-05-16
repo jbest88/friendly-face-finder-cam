@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,6 +39,33 @@ const SavedFaces: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Load face-api.js models when component mounts
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        console.log('Loading face detection models...');
+        const MODEL_URL = '/models';
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+        ]);
+        console.log('Face detection models loaded successfully');
+      } catch (error) {
+        console.error('Error loading face detection models:', error);
+        toast({
+          title: "Error",
+          description: "Could not load face detection models",
+          variant: "destructive"
+        });
+      }
+    };
+
+    loadModels();
+  }, [toast]);
 
   const loadFaces = async () => {
     setIsLoading(true);
@@ -111,20 +139,6 @@ const SavedFaces: React.FC = () => {
       fileInputRef.current.click();
     }
   };
-useEffect(() => {
-  // Load all needed face-api.js models if not already loaded
-  const loadModels = async () => {
-    const MODEL_URL = '/models'; // Adjust path as needed (e.g., '/models' in public/)
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-    ]);
-  };
-  loadModels();
-}, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -135,7 +149,11 @@ useEffect(() => {
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        console.log(`Processing file: ${file.name}`);
+        
+        // Load the image and ensure it's fully loaded before processing
         const image = await loadImage(file);
+        console.log(`Image loaded, dimensions: ${image.width}x${image.height}`);
         
         // Create a temporary canvas
         const canvas = document.createElement('canvas');
@@ -152,10 +170,12 @@ useEffect(() => {
         
         // Convert image to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        console.log('Image converted to base64');
         
-        // Create detector options with the proper constructor syntax
+        // Create proper options for the face detector
         const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320 });
-
+        
+        console.log('Starting face detection...');
         const detections = await faceapi
           .detectAllFaces(image, detectorOptions)
           .withFaceLandmarks()
@@ -190,6 +210,7 @@ useEffect(() => {
           
           // Store face in database
           await FaceDetectionService.storeFaceInDatabase(face);
+          console.log(`Face stored in database with name: ${face.name}`);
         }
         
         toast({
@@ -210,7 +231,7 @@ useEffect(() => {
       console.error('Error processing uploaded image:', error);
       toast({
         title: "Error",
-        description: "Could not process the uploaded image",
+        description: "Could not process the uploaded image: " + (error as Error).message,
         variant: "destructive"
       });
     } finally {
@@ -218,13 +239,38 @@ useEffect(() => {
     }
   };
   
-  // Helper function to load an image
+  // Helper function to load an image with proper Promise handling
   const loadImage = (file: File): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = URL.createObjectURL(file);
+      
+      // Set up proper event handlers for loading and errors
+      img.onload = () => {
+        console.log(`Image loaded: ${file.name}`);
+        resolve(img);
+      };
+      
+      img.onerror = (error) => {
+        console.error(`Error loading image: ${file.name}`, error);
+        reject(new Error(`Failed to load image: ${file.name}`));
+      };
+      
+      // Create a blob URL for the image
+      const objectUrl = URL.createObjectURL(file);
+      console.log(`Created object URL for image: ${file.name}`);
+      img.src = objectUrl;
+      
+      // Add a timeout for loading to avoid getting stuck
+      const timeout = setTimeout(() => {
+        reject(new Error(`Image loading timed out: ${file.name}`));
+      }, 30000); // 30 seconds timeout
+      
+      // Clean up the timeout on successful load
+      img.onload = () => {
+        clearTimeout(timeout);
+        console.log(`Image loaded successfully: ${file.name}`);
+        resolve(img);
+      };
     });
   };
   
