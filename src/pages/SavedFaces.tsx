@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -183,9 +182,11 @@ const SavedFaces: React.FC = () => {
             image.src = URL.createObjectURL(file);
           });
 
-          // Face detection
-          const detection = await faceapi
-            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+          // Face detection - explicitly reference faceapi 
+          const detection = await faceapi.detectSingleFace(
+            img, 
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 320 })
+          )
             .withFaceLandmarks()
             .withFaceExpressions()
             .withAgeAndGender()

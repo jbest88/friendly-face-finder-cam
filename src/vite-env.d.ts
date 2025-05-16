@@ -37,6 +37,7 @@ declare module 'face-api.js' {
 
   function matchDimensions(canvas: HTMLCanvasElement, dimensions: { width: number; height: number }): void;
   function detectAllFaces(input: HTMLVideoElement | HTMLImageElement, options: any): any;
+  function detectSingleFace(input: HTMLVideoElement | HTMLImageElement, options: any): any;
   function resizeResults(results: any, dimensions: { width: number; height: number }): any;
   
   const draw: {
