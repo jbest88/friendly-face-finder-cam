@@ -18,9 +18,14 @@ export class PersonService {
   
   static async getAllPersons(): Promise<Person[]> {
     try {
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Only fetch persons belonging to the current user
       const { data: persons, error } = await supabase
         .from('persons')
-        .select('*');
+        .select('*')
+        .eq('user_id', user?.id);
         
       if (error) {
         console.error('Error fetching persons:', error);
@@ -45,11 +50,15 @@ export class PersonService {
   
   static async getPersonWithFaces(personId: string): Promise<Person | null> {
     try {
-      // Get the person data
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Only fetch the person if it belongs to the current user
       const { data: person, error: personError } = await supabase
         .from('persons')
         .select('*')
         .eq('id', personId)
+        .eq('user_id', user?.id)
         .single();
         
       if (personError || !person) {
@@ -110,6 +119,10 @@ export class PersonService {
   
   static async updatePerson(person: Person): Promise<boolean> {
     try {
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Only allow updating person if it belongs to the current user
       const { error } = await supabase
         .from('persons')
         .update({
@@ -118,7 +131,8 @@ export class PersonService {
           notify_on_recognition: person.notifyOnRecognition,
           updated_at: new Date().toISOString()
         })
-        .eq('id', person.id);
+        .eq('id', person.id)
+        .eq('user_id', user?.id);
         
       return !error;
     } catch (error) {
@@ -129,11 +143,15 @@ export class PersonService {
   
   static async deletePerson(personId: string): Promise<boolean> {
     try {
-      // The faces will be automatically deleted due to the CASCADE constraint
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Only allow deleting person if it belongs to the current user
       const { error } = await supabase
         .from('persons')
         .delete()
-        .eq('id', personId);
+        .eq('id', personId)
+        .eq('user_id', user?.id);
         
       return !error;
     } catch (error) {
@@ -144,8 +162,24 @@ export class PersonService {
   
   static async addFaceToPerson(personId: string, face: DetectedFace): Promise<string | undefined> {
     try {
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
       if (!face.descriptor || !face.image) {
         console.error('Cannot store face without descriptor and image');
+        return undefined;
+      }
+      
+      // Verify the person belongs to the current user
+      const { data: person } = await supabase
+        .from('persons')
+        .select('id')
+        .eq('id', personId)
+        .eq('user_id', user?.id)
+        .single();
+        
+      if (!person) {
+        console.error('Person not found or does not belong to current user');
         return undefined;
       }
       
@@ -163,7 +197,7 @@ export class PersonService {
           notify_on_recognition: face.notifyOnRecognition || false,
           notes: face.notes || '',
           person_id: personId,
-          user_id: null // This will be set by RLS if needed
+          user_id: user?.id // Set the user_id to the current user
         })
         .select('id')
         .single();
@@ -182,14 +216,17 @@ export class PersonService {
   
   static async createPersonWithFace(face: DetectedFace): Promise<string | undefined> {
     try {
-      // First create the person
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create the person with the current user ID
       const { data: personData, error: personError } = await supabase
         .from('persons')
         .insert({
           name: face.name || 'Unknown Person',
           notes: face.notes,
           notify_on_recognition: face.notifyOnRecognition || false,
-          user_id: null // This will be set by RLS if needed
+          user_id: user?.id // Set the user_id to the current user
         })
         .select('id')
         .single();
@@ -217,7 +254,10 @@ export class PersonService {
   
   static async findBestMatchingPerson(descriptor: Float32Array): Promise<{person: Person | null, distance: number}> {
     try {
-      // Get all persons with their faces
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Get all persons with their faces for the current user
       const persons = await this.getAllPersons();
       if (persons.length === 0) {
         return { person: null, distance: Infinity };
