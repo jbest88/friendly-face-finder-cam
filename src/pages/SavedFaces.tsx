@@ -24,6 +24,8 @@ const SavedFaces: React.FC = () => {
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+
 
   // Redirect if not authenticated
   useEffect(() => {
