@@ -1,8 +1,8 @@
-
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
 import { NotificationsService } from './NotificationsService';
+import { PersonService } from './PersonService';
 
 export interface DetectedFace {
   detection: any; // Using 'any' temporarily to resolve TypeScript errors
@@ -17,6 +17,8 @@ export interface DetectedFace {
   notifyOnRecognition?: boolean;
   isRecognized?: boolean;
   matchedFaceId?: string;
+  matchedPersonId?: string;
+  personId?: string;
   similarity?: number;
   notes?: string;
 }
@@ -122,27 +124,25 @@ export class FaceDetectionService {
         return undefined;
       }
 
-      // Convert descriptor to array before storing to ensure it's properly saved
-      const descriptorArray = Array.from(face.descriptor);
-      console.log('Storing face descriptor with length:', descriptorArray.length);
-
-      const { data, error } = await supabase.from('stored_faces').insert({
-        name: face.name || 'Unknown',
-        descriptor: descriptorArray,
-        image: face.image,
-        age: face.age,
-        gender: face.gender,
-        notify_on_recognition: face.notifyOnRecognition || false,
-        notes: face.notes || ''
-      }).select('id').single();
-
-      if (error) {
-        console.error('Error storing face in database:', error);
-        return undefined;
-      }
-
-      console.log('Face stored successfully with ID:', data.id);
-      return data.id;
+      // Find best matching person
+      const { person, distance } = await PersonService.findBestMatchingPerson(face.descriptor);
+      
+      let personId: string | undefined;
+      
+      // If we found a close match, add the face to that person
+      if (person && PersonService.shouldClusterWithPerson(distance)) {
+        console.log(`Adding face to existing person: ${person.name} (distance: ${distance})`);
+        personId = await PersonService.addFaceToPerson(person.id, face);
+        
+        // Return the face ID (not person ID)
+        return personId;
+      } 
+      
+      // Otherwise create a new person with this face
+      console.log('Creating new person with this face');
+      personId = await PersonService.createPersonWithFace(face);
+      
+      return personId;
     } catch (error) {
       console.error('Error storing face in database:', error);
       return undefined;
@@ -151,36 +151,62 @@ export class FaceDetectionService {
 
   static async getFacesFromDatabase(): Promise<DetectedFace[]> {
     try {
-      const { data, error } = await supabase.from('stored_faces').select('*');
+      // Get all persons first
+      const { data: persons, error: personsError } = await supabase
+        .from('persons')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching faces from database:', error);
+      if (personsError) {
+        console.error('Error fetching persons from database:', personsError);
         return [];
       }
 
-      console.log('Fetched faces from database:', data.length);
+      console.log(`Fetched ${persons.length} persons from database`);
       
-      // Convert from database format to DetectedFace format
-      return data.map(record => {
-        // Ensure we have a descriptor and it's converted to Float32Array
-        if (!record.descriptor || !Array.isArray(record.descriptor)) {
-          console.error('Invalid descriptor for face:', record.id);
-          return null;
+      // For each person, get one representative face
+      const faces: DetectedFace[] = [];
+      for (const person of persons) {
+        // Get the most recent face for this person
+        const { data: personFaces, error: facesError } = await supabase
+          .from('stored_faces')
+          .select('*')
+          .eq('person_id', person.id)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (facesError || !personFaces || personFaces.length === 0) {
+          // If no faces found, create a placeholder
+          faces.push({
+            id: person.id,
+            name: person.name,
+            timestamp: new Date(person.updated_at),
+            detection: null,
+            notes: person.notes,
+            notifyOnRecognition: person.notify_on_recognition,
+            personId: person.id
+          });
+          continue;
         }
         
-        return {
-          id: record.id,
-          name: record.name,
-          descriptor: new Float32Array(record.descriptor),
-          image: record.image,
-          age: record.age,
-          gender: record.gender,
-          notifyOnRecognition: record.notify_on_recognition,
-          notes: record.notes,
-          timestamp: new Date(record.created_at),
-          detection: null // Adding the required detection property
-        };
-      }).filter(face => face !== null) as DetectedFace[]; // Filter out invalid faces
+        // Add the representative face with person data
+        const face = personFaces[0];
+        faces.push({
+          id: person.id, // Use the person ID as the ID
+          name: person.name,
+          descriptor: new Float32Array(face.descriptor),
+          image: face.image,
+          age: face.age,
+          gender: face.gender,
+          timestamp: new Date(person.updated_at),
+          notifyOnRecognition: person.notify_on_recognition,
+          notes: person.notes,
+          detection: null,
+          personId: person.id
+        });
+      }
+      
+      return faces;
     } catch (error) {
       console.error('Error processing faces from database:', error);
       return [];
@@ -189,13 +215,28 @@ export class FaceDetectionService {
 
   static async updateFaceInDatabase(face: DetectedFace): Promise<boolean> {
     try {
+      // Check if we're updating a face or a person
+      if (face.personId) {
+        // Update the person info
+        return await PersonService.updatePerson({
+          id: face.personId,
+          name: face.name || 'Unknown Person',
+          notes: face.notes,
+          notifyOnRecognition: face.notifyOnRecognition,
+          createdAt: face.timestamp,
+          updatedAt: new Date()
+        });
+      }
+      
+      // If it's just a face (legacy), update the face directly
       if (!face.id) return false;
 
       const { error } = await supabase.from('stored_faces').update({
         name: face.name,
         notify_on_recognition: face.notifyOnRecognition,
         notes: face.notes,
-        last_seen: new Date().toISOString()
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }).eq('id', face.id);
 
       return !error;
@@ -207,6 +248,19 @@ export class FaceDetectionService {
 
   static async deleteFaceFromDatabase(faceId: string): Promise<boolean> {
     try {
+      // Check if this is a person ID
+      const { data: person } = await supabase
+        .from('persons')
+        .select('id')
+        .eq('id', faceId)
+        .maybeSingle();
+        
+      if (person) {
+        // Delete the entire person and all their faces
+        return await PersonService.deletePerson(faceId);
+      }
+      
+      // Otherwise delete a single face
       const { error } = await supabase.from('stored_faces').delete().eq('id', faceId);
       return !error;
     } catch (error) {

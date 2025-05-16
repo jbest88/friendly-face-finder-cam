@@ -1,0 +1,291 @@
+import React, { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { Person, PersonService } from '@/services/PersonService';
+import { DetectedFace } from '@/services/FaceDetectionService';
+import FaceEditor from './FaceEditor';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Trash2, Edit } from 'lucide-react';
+
+interface PersonDetailDialogProps {
+  personId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onUpdatePerson?: () => void;
+}
+
+const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({ 
+  personId, 
+  open, 
+  onOpenChange,
+  onUpdatePerson
+}) => {
+  const { toast } = useToast();
+  const [person, setPerson] = useState<Person | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
+  
+  // Load person data when dialog opens
+  useEffect(() => {
+    if (open && personId) {
+      loadPersonData(personId);
+    }
+  }, [open, personId]);
+  
+  const loadPersonData = async (id: string) => {
+    setLoading(true);
+    try {
+      const personData = await PersonService.getPersonWithFaces(id);
+      setPerson(personData);
+    } catch (error) {
+      console.error('Error loading person data:', error);
+      toast({
+        title: "Error",
+        description: "Could not load person details",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleUpdatePerson = async (updatedPerson: Person) => {
+    try {
+      const success = await PersonService.updatePerson(updatedPerson);
+      
+      if (success) {
+        setPerson(updatedPerson);
+        toast({
+          title: "Success",
+          description: "Person information updated",
+        });
+        if (onUpdatePerson) onUpdatePerson();
+      } else {
+        throw new Error("Failed to update person");
+      }
+    } catch (error) {
+      console.error('Error updating person:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update person information",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleSaveFace = async (updatedFace: DetectedFace) => {
+    // If this is a person-level edit, update the person
+    if (updatedFace.personId && person) {
+      const updatedPerson = {
+        ...person,
+        name: updatedFace.name || person.name,
+        notes: updatedFace.notes,
+        notifyOnRecognition: updatedFace.notifyOnRecognition
+      };
+      
+      await handleUpdatePerson(updatedPerson);
+      setEditingFace(null);
+      return;
+    }
+    
+    // Otherwise handle as an individual face update
+    // Note: This branch is for future use if we implement individual face editing
+  };
+  
+  const handleDeletePerson = async () => {
+    if (!person) return;
+    
+    if (!window.confirm(`Are you sure you want to delete ${person.name} and all associated faces?`)) {
+      return;
+    }
+    
+    try {
+      const success = await PersonService.deletePerson(person.id);
+      
+      if (success) {
+        toast({
+          title: "Success",
+          description: `Deleted ${person.name} and all associated faces`,
+        });
+        onOpenChange(false);
+        if (onUpdatePerson) onUpdatePerson();
+      } else {
+        throw new Error("Failed to delete person");
+      }
+    } catch (error) {
+      console.error('Error deleting person:', error);
+      toast({
+        title: "Error", 
+        description: "Failed to delete person",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  if (loading) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-lg bg-gray-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Loading Person Details...</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  
+  if (!person) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-lg bg-gray-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Person Not Found</DialogTitle>
+          </DialogHeader>
+          <p>The requested person could not be found.</p>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  
+  // Create a face object for the person to use with our existing FaceEditor
+  const personAsFace: DetectedFace = {
+    id: person.id,
+    name: person.name,
+    notes: person.notes,
+    notifyOnRecognition: person.notifyOnRecognition,
+    timestamp: person.updatedAt,
+    detection: null,
+    personId: person.id,
+    image: person.faces && person.faces.length > 0 ? person.faces[0].image : undefined
+  };
+  
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-gray-900 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">
+              {person.name}
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                className="ml-2"
+                onClick={handleDeletePerson}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete Person
+              </Button>
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {person.faces ? `${person.faces.length} stored face images` : 'No face images stored'}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="ml-4"
+                onClick={() => setEditingFace(personAsFace)}
+              >
+                <Edit className="h-4 w-4 mr-1" />
+                Edit Person Details
+              </Button>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            <h3 className="text-lg font-medium mb-2">Person Details</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Property</TableHead>
+                  <TableHead>Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="font-medium">Name</TableCell>
+                  <TableCell>{person.name}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Notes</TableCell>
+                  <TableCell>{person.notes || 'None'}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Notify on Recognition</TableCell>
+                  <TableCell>{person.notifyOnRecognition ? 'Yes' : 'No'}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Created</TableCell>
+                  <TableCell>{person.createdAt.toLocaleString()}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Last Updated</TableCell>
+                  <TableCell>{person.updatedAt.toLocaleString()}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+          
+          {person.faces && person.faces.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-lg font-medium mb-2">Face Images</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                {person.faces.map((face, index) => (
+                  <Card key={face.id} className="overflow-hidden bg-black border-gray-800">
+                    <div className="h-48 overflow-hidden bg-gray-800">
+                      {face.image && (
+                        <img 
+                          src={face.image} 
+                          alt={`Face ${index + 1}`} 
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <CardContent className="p-4">
+                      <p className="text-sm text-gray-500 mb-2">
+                        ID: {face.id.substring(0, 8)}...
+                      </p>
+                      <p className="text-sm mb-1 text-gray-300">
+                        <span className="font-medium">Captured:</span> {face.timestamp.toLocaleString()}
+                      </p>
+                      {face.age && (
+                        <p className="text-sm mb-1 text-gray-300">
+                          <span className="font-medium">Age:</span> ~{Math.round(face.age)} years
+                        </p>
+                      )}
+                      {face.gender && (
+                        <p className="text-sm mb-1 text-gray-300">
+                          <span className="font-medium">Gender:</span> {face.gender}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {editingFace && (
+        <Dialog open={!!editingFace} onOpenChange={(open) => !open && setEditingFace(null)}>
+          <DialogContent className="sm:max-w-lg bg-gray-900 text-white">
+            <DialogHeader>
+              <DialogTitle>Edit Person</DialogTitle>
+            </DialogHeader>
+            <FaceEditor 
+              face={editingFace} 
+              onSave={handleSaveFace} 
+              onDelete={handleDeletePerson} 
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+};
+
+export default PersonDetailDialog;

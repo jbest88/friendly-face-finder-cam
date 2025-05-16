@@ -9,6 +9,36 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      persons: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          notify_on_recognition: boolean | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          notify_on_recognition?: boolean | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          notify_on_recognition?: boolean | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -86,6 +116,8 @@ export type Database = {
           name: string | null
           notes: string | null
           notify_on_recognition: boolean | null
+          person_id: string | null
+          updated_at: string | null
           user_id: string | null
         }
         Insert: {
@@ -99,6 +131,8 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notify_on_recognition?: boolean | null
+          person_id?: string | null
+          updated_at?: string | null
           user_id?: string | null
         }
         Update: {
@@ -112,9 +146,19 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notify_on_recognition?: boolean | null
+          person_id?: string | null
+          updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "stored_faces_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
