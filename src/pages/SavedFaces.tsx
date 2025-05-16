@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Upload, Image, User } from 'lucide-react';
+import { ArrowLeft, Upload } from 'lucide-react';
 import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FaceEditor from '@/components/face-detection/FaceEditor';
@@ -24,29 +23,27 @@ const SavedFaces: React.FC = () => {
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Redirect if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
     }
   }, [user, loading, navigate]);
-  
+
   // Load faces when component mounts
   useEffect(() => {
     if (user) {
       loadFaces();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-  
+
   const loadFaces = async () => {
     setIsLoading(true);
     try {
-      // Load faces from database
       const dbFaces = await FaceDetectionService.getFacesFromDatabase();
       setDatabaseFaces(dbFaces);
-      
-      // Load faces from local storage
       const localStorageFaces = FaceDetectionService.getFacesFromLocalStorage();
       setLocalFaces(localStorageFaces);
     } catch (error) {
@@ -60,18 +57,16 @@ const SavedFaces: React.FC = () => {
       setIsLoading(false);
     }
   };
-  
+
   const handleSaveFace = async (updatedFace: DetectedFace) => {
     try {
       const success = await FaceDetectionService.updateFaceInDatabase(updatedFace);
-      
+
       if (success) {
         toast({
           title: "Success",
           description: `Updated information for ${updatedFace.name}`,
         });
-        
-        // Refresh the faces list
         loadFaces();
         setEditingFace(null);
       } else {
@@ -86,18 +81,16 @@ const SavedFaces: React.FC = () => {
       });
     }
   };
-  
+
   const handleDeleteFace = async (faceId: string) => {
     try {
       const success = await FaceDetectionService.deleteFaceFromDatabase(faceId);
-      
+
       if (success) {
         toast({
           title: "Success",
           description: "Face deleted successfully",
         });
-        
-        // Refresh the faces list
         loadFaces();
         setEditingFace(null);
       } else {
@@ -122,46 +115,41 @@ const SavedFaces: React.FC = () => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    
+
     setIsUploading(true);
-    
+
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const image = await loadImage(file);
-        
+
         // Create a temporary canvas
         const canvas = document.createElement('canvas');
         canvas.width = image.width;
         canvas.height = image.height;
         const ctx = canvas.getContext('2d');
-        
+
         if (!ctx) {
           throw new Error('Cannot get canvas context');
         }
-        
-        // Draw the image to canvas
+
         ctx.drawImage(image, 0, 0, image.width, image.height);
-        
-        // Convert image to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
-        
-        // Create detector options - FIXED: Direct usage without constructor
-        // The TinyFaceDetectorOptions is likely not a class constructor in this context
-        // so we'll use it directly as an object        
-        // Detect faces in the image - pass the options directly to detectAllFaces
-        const detectorOptions = new faceapi.TinyFaceDetectorOptions(320);
 
-const detections = await faceapi
-  .detectAllFaces(image, detectorOptions)
-  .withFaceLandmarks()
-  .withFaceExpressions()
-  .withAgeAndGender()
-  .withFaceDescriptors();
+        // Use TinyFaceDetectorOptions correctly:
+        // No arguments = default, or you can supply size/scoreThreshold as individual arguments
+        // Example: new faceapi.TinyFaceDetectorOptions(320, 0.5)
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions(); // Use defaults or add args
 
-          
+        const detections = await faceapi
+          .detectAllFaces(image, detectorOptions)
+          .withFaceLandmarks()
+          .withFaceExpressions()
+          .withAgeAndGender()
+          .withFaceDescriptors();
+
         console.log(`Detected ${detections.length} faces in uploaded image`);
-        
+
         if (detections.length === 0) {
           toast({
             title: "No faces detected",
@@ -170,7 +158,7 @@ const detections = await faceapi
           });
           continue;
         }
-        
+
         // For each detected face, create a DetectedFace object
         for (const detection of detections) {
           const face: DetectedFace = {
@@ -182,27 +170,22 @@ const detections = await faceapi
             timestamp: new Date(),
             id: generateTemporaryId(),
             image: imageData,
-            name: file.name.split('.')[0] // Use filename as default name
+            name: file.name.split('.')[0]
           };
-          
-          // Store face in database
           await FaceDetectionService.storeFaceInDatabase(face);
         }
-        
+
         toast({
           title: "Success",
           description: `Processed ${detections.length} faces from ${file.name}`,
         });
       }
-      
+
       // Clear the file input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      
-      // Refresh faces list
       await loadFaces();
-      
     } catch (error) {
       console.error('Error processing uploaded image:', error);
       toast({
@@ -214,8 +197,7 @@ const detections = await faceapi
       setIsUploading(false);
     }
   };
-  
-  // Helper function to load an image
+
   const loadImage = (file: File): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -224,8 +206,7 @@ const detections = await faceapi
       img.src = URL.createObjectURL(file);
     });
   };
-  
-  // Show loading or login prompt if not authenticated
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex items-center justify-center">
@@ -233,7 +214,7 @@ const detections = await faceapi
       </div>
     );
   }
-  
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white flex flex-col items-center justify-center p-4">
@@ -244,13 +225,13 @@ const detections = await faceapi
           Please log in or sign up to use the face recognition features.
         </p>
         <div className="flex gap-4">
-          <Button 
+          <Button
             onClick={() => navigate('/login')}
             className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
           >
             Log In
           </Button>
-          <Button 
+          <Button
             onClick={() => navigate('/signup')}
             variant="outline"
             className="text-white border-gray-700 hover:bg-gray-800"
@@ -261,7 +242,7 @@ const detections = await faceapi
       </div>
     );
   }
-  
+
   const renderFacesList = (faces: DetectedFace[]) => {
     if (isLoading) {
       return (
@@ -270,7 +251,6 @@ const detections = await faceapi
         </div>
       );
     }
-    
     if (faces.length === 0) {
       return (
         <div className="text-center py-8">
@@ -278,16 +258,15 @@ const detections = await faceapi
         </div>
       );
     }
-    
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
         {faces.map((face, index) => (
           <Card key={face.id} className="overflow-hidden bg-black border-gray-800">
             <div className="h-48 overflow-hidden bg-gray-800">
               {face.image && (
-                <img 
-                  src={face.image} 
-                  alt={`Face ${index + 1}`} 
+                <img
+                  src={face.image}
+                  alt={`Face ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
               )}
@@ -312,8 +291,8 @@ const detections = await faceapi
                   <span className="font-medium">Gender:</span> {face.gender}
                 </p>
               )}
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
                 onClick={() => setEditingFace(face)}
               >
@@ -331,8 +310,8 @@ const detections = await faceapi
       <div className="max-w-6xl mx-auto pt-10">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               className="text-white mr-4"
               onClick={() => navigate('/')}
             >
@@ -341,7 +320,6 @@ const detections = await faceapi
             </Button>
             <h1 className="text-3xl font-bold text-white">Saved Faces</h1>
           </div>
-          
           <div>
             <input
               type="file"
@@ -351,7 +329,7 @@ const detections = await faceapi
               multiple
               className="hidden"
             />
-            <Button 
+            <Button
               onClick={handleUploadClick}
               className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
               disabled={isUploading}
@@ -367,33 +345,32 @@ const detections = await faceapi
             </Button>
           </div>
         </div>
-        
+
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-2 mb-4">
             <TabsTrigger value="database">Database ({databaseFaces.length})</TabsTrigger>
             <TabsTrigger value="local">Local Storage ({localFaces.length})</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="database">
             {renderFacesList(databaseFaces)}
           </TabsContent>
-          
           <TabsContent value="local">
             {renderFacesList(localFaces)}
           </TabsContent>
         </Tabs>
       </div>
-      
+
       {editingFace && (
         <Dialog open={!!editingFace} onOpenChange={(open) => !open && setEditingFace(null)}>
           <DialogContent className="sm:max-w-lg bg-gray-900 text-white">
             <DialogHeader>
               <DialogTitle>Edit Face</DialogTitle>
             </DialogHeader>
-            <FaceEditor 
-              face={editingFace} 
-              onSave={handleSaveFace} 
-              onDelete={() => handleDeleteFace(editingFace.id)} 
+            <FaceEditor
+              face={editingFace}
+              onSave={handleSaveFace}
+              onDelete={() => handleDeleteFace(editingFace.id)}
             />
           </DialogContent>
         </Dialog>
