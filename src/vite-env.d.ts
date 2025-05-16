@@ -26,11 +26,10 @@ declare module 'face-api.js' {
     };
   };
 
-  // Updated TinyFaceDetectorOptions class to fix the constructor issue
+  // Fix the TinyFaceDetectorOptions class to properly accept configuration options
   class TinyFaceDetectorOptions {
-    // Define constructor that takes an object with inputSize
     constructor(options: { inputSize: number });
-    // Alternative constructor in case it's needed
+    // Alternative constructor method
     static fromParams(inputSize: number, scoreThreshold?: number): TinyFaceDetectorOptions;
   }
 
