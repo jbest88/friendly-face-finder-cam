@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -146,15 +145,12 @@ const SavedFaces: React.FC = () => {
         // Convert image to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
         
-        // Fix: Create TinyFaceDetectorOptions correctly
-        const detectorOptions = {
-          inputSize: 320,
-          scoreThreshold: 0.5
-        };
+        // Create TinyFaceDetectorOptions correctly - based on face-api.js types
+        const detectorOptions = new faceapi.TinyFaceDetectorOptions();
         
-        // Detect faces in the image using the correct options syntax
+        // Detect faces in the image
         const detections = await faceapi
-          .detectAllFaces(image, new faceapi.TinyFaceDetectorOptions(detectorOptions))
+          .detectAllFaces(image, detectorOptions)
           .withFaceLandmarks()
           .withFaceExpressions()
           .withAgeAndGender()
