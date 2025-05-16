@@ -1,15 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Upload, Image, User } from 'lucide-react';
 import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FaceEditor from '@/components/face-detection/FaceEditor';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import * as faceapi from 'face-api.js';
+import { generateTemporaryId } from '@/utils/idGenerator';
 
 const SavedFaces: React.FC = () => {
   const { user, loading } = useAuth();
@@ -20,6 +22,8 @@ const SavedFaces: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('database');
   const [editingFace, setEditingFace] = useState<DetectedFace | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Redirect if not authenticated
   useEffect(() => {
@@ -43,7 +47,7 @@ const SavedFaces: React.FC = () => {
       setDatabaseFaces(dbFaces);
       
       // Load faces from local storage
-      const localStorageFaces = await FaceDetectionService.getFacesFromLocalStorage();
+      const localStorageFaces = FaceDetectionService.getFacesFromLocalStorage();
       setLocalFaces(localStorageFaces);
     } catch (error) {
       console.error('Error loading faces:', error);
@@ -107,6 +111,112 @@ const SavedFaces: React.FC = () => {
         variant: "destructive"
       });
     }
+  };
+
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const image = await loadImage(file);
+        
+        // Create a temporary canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          throw new Error('Cannot get canvas context');
+        }
+        
+        // Draw the image to canvas
+        ctx.drawImage(image, 0, 0, image.width, image.height);
+        
+        // Convert image to base64
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        
+        // Detect faces in the image
+        const detections = await faceapi
+          .detectAllFaces(image, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+          .withFaceLandmarks()
+          .withFaceExpressions()
+          .withAgeAndGender()
+          .withFaceDescriptors();
+          
+        console.log(`Detected ${detections.length} faces in uploaded image`);
+        
+        if (detections.length === 0) {
+          toast({
+            title: "No faces detected",
+            description: `No faces could be detected in ${file.name}`,
+            variant: "destructive"
+          });
+          continue;
+        }
+        
+        // For each detected face, create a DetectedFace object
+        for (const detection of detections) {
+          const face: DetectedFace = {
+            detection: detection.detection,
+            expressions: detection.expressions,
+            age: detection.age,
+            gender: detection.gender,
+            descriptor: detection.descriptor,
+            timestamp: new Date(),
+            id: generateTemporaryId(),
+            image: imageData,
+            name: file.name.split('.')[0] // Use filename as default name
+          };
+          
+          // Store face in database
+          await FaceDetectionService.storeFaceInDatabase(face);
+        }
+        
+        toast({
+          title: "Success",
+          description: `Processed ${detections.length} faces from ${file.name}`,
+        });
+      }
+      
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      
+      // Refresh faces list
+      await loadFaces();
+      
+    } catch (error) {
+      console.error('Error processing uploaded image:', error);
+      toast({
+        title: "Error",
+        description: "Could not process the uploaded image",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+  
+  // Helper function to load an image
+  const loadImage = (file: File): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
   };
   
   // Show loading or login prompt if not authenticated
@@ -213,16 +323,43 @@ const SavedFaces: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white p-4">
       <div className="max-w-6xl mx-auto pt-10">
-        <div className="flex items-center mb-6">
-          <Button 
-            variant="ghost" 
-            className="text-white mr-4"
-            onClick={() => navigate('/')}
-          >
-            <ArrowLeft className="h-5 w-5 mr-1" />
-            Back
-          </Button>
-          <h1 className="text-3xl font-bold text-white">Saved Faces</h1>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <Button 
+              variant="ghost" 
+              className="text-white mr-4"
+              onClick={() => navigate('/')}
+            >
+              <ArrowLeft className="h-5 w-5 mr-1" />
+              Back
+            </Button>
+            <h1 className="text-3xl font-bold text-white">Saved Faces</h1>
+          </div>
+          
+          <div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="image/*"
+              multiple
+              className="hidden"
+            />
+            <Button 
+              onClick={handleUploadClick}
+              className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600"
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <>Processing...</>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Faces
+                </>
+              )}
+            </Button>
+          </div>
         </div>
         
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">

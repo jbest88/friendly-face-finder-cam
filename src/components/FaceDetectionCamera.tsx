@@ -24,6 +24,7 @@ const FaceDetectionCamera = () => {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [showSavedFaces, setShowSavedFaces] = useState(false);
   const [processingFaces, setProcessingFaces] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
 
   // Load saved faces from localStorage and database on component mount
   useEffect(() => {
@@ -199,6 +200,24 @@ const FaceDetectionCamera = () => {
               }
               return match;
             }
+            
+            // No match found, auto-save if enabled
+            if (autoSaveEnabled && videoRef.current) {
+              // First get an image for the face
+              const capturedFaces = FaceDetectionService.captureFaceImage(
+                videoRef.current, 
+                [face]
+              );
+              
+              if (capturedFaces.length > 0) {
+                // Auto-save the face
+                FaceDetectionService.autoSaveUnidentifiedFace(capturedFaces[0]);
+                
+                // Update local state
+                setSavedFaces(FaceDetectionService.getFacesFromLocalStorage());
+              }
+            }
+            
             return face;
           });
           
@@ -256,6 +275,18 @@ const FaceDetectionCamera = () => {
       
       {isCameraActive && (
         <>
+          <div className="flex items-center mb-4 justify-between w-full">
+            <label className="flex items-center gap-2 text-sm text-white">
+              <input
+                type="checkbox"
+                checked={autoSaveEnabled}
+                onChange={e => setAutoSaveEnabled(e.target.checked)}
+                className="rounded border-gray-400"
+              />
+              Auto-save unrecognized faces
+            </label>
+          </div>
+          
           <CameraControls
             isCameraActive={true}
             facingMode={facingMode}

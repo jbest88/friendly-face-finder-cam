@@ -1,4 +1,3 @@
-
 import * as faceapi from 'face-api.js';
 import { generateTemporaryId } from '@/utils/idGenerator';
 import { supabase } from '@/integrations/supabase/client';
@@ -368,8 +367,8 @@ export class FaceDetectionService {
     }
   }
 
-  // Legacy methods for localStorage
-  static loadSavedFaces(): DetectedFace[] {
+  // Local storage methods
+  static getFacesFromLocalStorage(): DetectedFace[] {
     try {
       const saved = localStorage.getItem('savedFaces');
       if (saved) {
@@ -392,6 +391,31 @@ export class FaceDetectionService {
       localStorage.setItem('savedFaces', JSON.stringify(faces));
     } catch (error) {
       console.error('Error saving faces:', error);
+    }
+  }
+
+  // Auto-save unidentified faces
+  static autoSaveUnidentifiedFace(face: DetectedFace): DetectedFace {
+    if (!face.image) return face;
+    
+    try {
+      // Add unidentified tag to the face
+      const unidentifiedFace = {
+        ...face,
+        name: 'Unidentified Person',
+        notes: 'Automatically saved - not recognized',
+        timestamp: new Date()
+      };
+      
+      // Save to local storage
+      const savedFaces = this.getFacesFromLocalStorage();
+      savedFaces.push(unidentifiedFace);
+      this.saveFaces(savedFaces);
+      
+      return unidentifiedFace;
+    } catch (error) {
+      console.error('Error auto-saving unidentified face:', error);
+      return face;
     }
   }
 }
