@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Upload, User, Users } from 'lucide-react';
+import { ArrowLeft, Upload, User, Users, Bell, Edit, History } from 'lucide-react';
 // Change import from face-api.js to @vladmandic/face-api
 import * as faceapi from '@vladmandic/face-api';
 import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
@@ -15,6 +14,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { generateTemporaryId } from '@/utils/idGenerator';
 import ModelLoader from '@/components/face-detection/ModelLoader';
 import PersonDetailDialog from '@/components/face-detection/PersonDetailDialog';
+import FaceMergeDialog from '@/components/face-detection/FaceMergeDialog';
+import FaceHistoryDialog from '@/components/face-detection/FaceHistoryDialog';
+import NotificationsTable from '@/components/notifications/NotificationsTable';
+import { NotificationsService, FaceRecognitionNotification } from '@/services/NotificationsService';
 
 const SavedFaces: React.FC = () => {
   const { user, loading } = useAuth();
@@ -30,6 +33,11 @@ const SavedFaces: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isPersonDetailOpen, setIsPersonDetailOpen] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+  const [selectedFace, setSelectedFace] = useState<DetectedFace | null>(null);
+  const [notifications, setNotifications] = useState<FaceRecognitionNotification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -65,6 +73,45 @@ const SavedFaces: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+    }
+  }, [user]);
+  
+  const loadNotifications = async () => {
+    try {
+      const unreadNotifications = await NotificationsService.getUnreadNotifications();
+      setNotifications(unreadNotifications);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    }
+  };
+  
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      const success = await NotificationsService.markAsRead(notificationId);
+      if (success) {
+        setNotifications(prev => 
+          prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
+        );
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+  
+  const handleMergeFace = (face: DetectedFace) => {
+    setSelectedFace(face);
+    setShowMergeDialog(true);
+  };
+  
+  const handleViewHistory = (face: DetectedFace) => {
+    setSelectedFace(face);
+    setShowHistoryDialog(true);
+  };
+
+  // Modify the handleSaveFace function to add merge and history options
   const handleSaveFace = async (updatedFace: DetectedFace) => {
     try {
       const success = await FaceDetectionService.updateFaceInDatabase(updatedFace);
@@ -88,7 +135,7 @@ const SavedFaces: React.FC = () => {
       });
     }
   };
-
+  
   const handleDeleteFace = async (faceId: string) => {
     try {
       const success = await FaceDetectionService.deleteFaceFromDatabase(faceId);
@@ -302,24 +349,45 @@ const SavedFaces: React.FC = () => {
                 <span className="font-medium">Captured:</span> {face.timestamp.toString().substring(0, 24)}
               </p>
               
-              {face.personId ? (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {face.personId ? (
+                  <Button
+                    variant="outline"
+                    className="text-white border-gray-700 hover:bg-gray-800"
+                    onClick={() => handleViewPersonDetails(face.personId!)}
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    View Person
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="text-white border-gray-700 hover:bg-gray-800"
+                    onClick={() => setEditingFace(face)}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+                
                 <Button
                   variant="outline"
-                  className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
-                  onClick={() => handleViewPersonDetails(face.personId!)}
+                  className="text-white border-gray-700 hover:bg-gray-800"
+                  onClick={() => handleMergeFace(face)}
                 >
                   <Users className="h-4 w-4 mr-2" />
-                  View Person
+                  Merge
                 </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
-                  onClick={() => setEditingFace(face)}
-                >
-                  Edit Information
-                </Button>
-              )}
+              </div>
+              
+              <Button
+                variant="outline"
+                className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
+                onClick={() => handleViewHistory(face)}
+              >
+                <History className="h-4 w-4 mr-2" />
+                View History
+              </Button>
             </CardContent>
           </Card>
         ))}
@@ -386,7 +454,20 @@ const SavedFaces: React.FC = () => {
             <h1 className="text-3xl font-bold text-white">Saved Faces</h1>
           </div>
 
-          <div>
+          <div className="flex space-x-2">
+            <Button
+              variant="ghost"
+              className={`relative ${notifications.length > 0 ? 'text-blue-400' : 'text-white'}`}
+              onClick={() => setShowNotifications(!showNotifications)}
+            >
+              <Bell className="h-5 w-5" />
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </Button>
+            
             <input
               type="file"
               ref={fileInputRef}
@@ -412,6 +493,24 @@ const SavedFaces: React.FC = () => {
             </Button>
           </div>
         </div>
+        
+        {/* Notifications panel */}
+        {showNotifications && (
+          <div className="mb-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <h2 className="text-xl font-bold mb-4 flex items-center">
+              <Bell className="h-5 w-5 mr-2" />
+              Notifications
+            </h2>
+            <NotificationsTable 
+              notifications={notifications}
+              onMarkAsRead={handleMarkAsRead}
+              onViewPerson={(personId) => {
+                setShowNotifications(false);
+                handleViewPersonDetails(personId);
+              }}
+            />
+          </div>
+        )}
 
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-2 mb-4">
@@ -439,6 +538,8 @@ const SavedFaces: React.FC = () => {
               face={editingFace}
               onSave={handleSaveFace}
               onDelete={() => handleDeleteFace(editingFace.id)}
+              onMerge={handleMergeFace}
+              onViewHistory={handleViewHistory}
             />
           </DialogContent>
         </Dialog>
@@ -449,6 +550,21 @@ const SavedFaces: React.FC = () => {
         open={isPersonDetailOpen}
         onOpenChange={setIsPersonDetailOpen}
         onUpdatePerson={loadFaces}
+      />
+      
+      {/* Merge Dialog */}
+      <FaceMergeDialog
+        open={showMergeDialog}
+        onOpenChange={setShowMergeDialog}
+        sourceFaceId={selectedFace?.id || null}
+        onComplete={loadFaces}
+      />
+      
+      {/* History Dialog */}
+      <FaceHistoryDialog
+        open={showHistoryDialog}
+        onOpenChange={setShowHistoryDialog}
+        face={selectedFace}
       />
     </div>
   );

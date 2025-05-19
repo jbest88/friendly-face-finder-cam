@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,9 +7,11 @@ import { Person, PersonService } from '@/services/PersonService';
 import { DetectedFace, FaceDetectionService } from '@/services/FaceDetectionService';
 import FaceEditor from './FaceEditor';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { Trash2, Edit, ImagePlus } from 'lucide-react';
+import { Trash2, Edit, ImagePlus, History } from 'lucide-react';
 import * as faceapi from '@vladmandic/face-api';
 import { generateTemporaryId } from '@/utils/idGenerator';
+import FaceMergeDialog from './FaceMergeDialog';
+import FaceHistoryDialog from './FaceHistoryDialog';
 
 interface PersonDetailDialogProps {
   personId: string | null;
@@ -32,6 +33,8 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
   const [isAddingImage, setIsAddingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
   
   // Load person data when dialog opens
   useEffect(() => {
@@ -231,6 +234,11 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
     }
   };
   
+  const handleViewHistory = () => {
+    if (!person) return;
+    setShowHistoryDialog(true);
+  };
+  
   if (loading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -276,17 +284,27 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-gray-900 text-white">
           <DialogHeader>
-            <DialogTitle className="text-2xl">
-              {person.name}
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                className="ml-2"
-                onClick={handleDeletePerson}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete Person
-              </Button>
+            <DialogTitle className="text-2xl flex justify-between items-center">
+              <span>{person.name}</span>
+              <div className="flex space-x-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleViewHistory}
+                  className="text-white border-gray-700 hover:bg-gray-800"
+                >
+                  <History className="h-4 w-4 mr-1" />
+                  History
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={handleDeletePerson}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              </div>
             </DialogTitle>
             <DialogDescription className="text-gray-400">
               {person.faces ? `${person.faces.length} stored face images` : 'No face images stored'}
@@ -295,6 +313,7 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
                   variant="outline" 
                   size="sm" 
                   onClick={() => setEditingFace(personAsFace)}
+                  className="text-white border-gray-700 hover:bg-gray-800"
                 >
                   <Edit className="h-4 w-4 mr-1" />
                   Edit Person Details
@@ -305,6 +324,7 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
                   size="sm"
                   onClick={() => handleAddImageClick(person.id)}
                   disabled={isProcessing}
+                  className="text-white border-gray-700 hover:bg-gray-800"
                 >
                   <ImagePlus className="h-4 w-4 mr-1" />
                   {isProcessing ? "Processing..." : "Add Images"}
@@ -409,10 +429,30 @@ const PersonDetailDialog: React.FC<PersonDetailDialogProps> = ({
               onSave={handleSaveFace} 
               onDelete={handleDeletePerson} 
               onAddImage={handleAddImageClick}
+              onMerge={() => setShowMergeDialog(true)}
+              onViewHistory={handleViewHistory}
             />
           </DialogContent>
         </Dialog>
       )}
+      
+      {/* Merge Dialog */}
+      <FaceMergeDialog
+        open={showMergeDialog}
+        onOpenChange={setShowMergeDialog}
+        sourceFaceId={person?.id || null}
+        onComplete={() => {
+          if (onUpdatePerson) onUpdatePerson();
+          loadPersonData(person.id);
+        }}
+      />
+      
+      {/* History Dialog */}
+      <FaceHistoryDialog
+        open={showHistoryDialog}
+        onOpenChange={setShowHistoryDialog}
+        face={personAsFace}
+      />
     </>
   );
 };

@@ -12,12 +12,53 @@ export interface FaceRecognitionNotification {
   is_read: boolean;
 }
 
+export interface NotificationSettings {
+  enabled: boolean;
+  cooldownPeriod: number; // milliseconds
+}
+
 export class NotificationsService {
   private static channel: RealtimeChannel | null = null;
   // Track recently recognized faces to prevent spam (face_id -> timestamp)
   private static recentlyNotifiedFaces: Map<string, number> = new Map();
   // How long to wait before sending another notification for the same face (ms)
   private static NOTIFICATION_COOLDOWN = 60000; // 1 minute
+  
+  // Allow users to customize notification settings globally
+  private static settings: NotificationSettings = {
+    enabled: true,
+    cooldownPeriod: 60000 // Default 1 minute
+  };
+
+  /**
+   * Update notification settings
+   */
+  static updateSettings(settings: Partial<NotificationSettings>): void {
+    this.settings = { ...this.settings, ...settings };
+    this.NOTIFICATION_COOLDOWN = settings.cooldownPeriod ?? this.NOTIFICATION_COOLDOWN;
+    
+    // Save settings to local storage
+    localStorage.setItem('notificationSettings', JSON.stringify(this.settings));
+  }
+  
+  /**
+   * Get current notification settings
+   */
+  static getSettings(): NotificationSettings {
+    // Try to load from localStorage first
+    const savedSettings = localStorage.getItem('notificationSettings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        this.settings = { ...this.settings, ...parsed };
+        this.NOTIFICATION_COOLDOWN = this.settings.cooldownPeriod;
+      } catch (e) {
+        console.error('Error parsing saved notification settings:', e);
+      }
+    }
+    
+    return this.settings;
+  }
 
   /**
    * Send a notification when a face is recognized
@@ -28,6 +69,12 @@ export class NotificationsService {
     image?: string,
     notes?: string
   ): Promise<boolean> {
+    // Check if notifications are enabled
+    if (!this.getSettings().enabled) {
+      console.log('Notifications are disabled, skipping');
+      return false;
+    }
+    
     try {
       // If we have a face ID, check if we've recently sent a notification for this face
       if (faceId) {
@@ -135,8 +182,8 @@ export class NotificationsService {
       const { data, error } = await supabase
         .from('recognition_notifications')
         .select('*')
-        .eq('is_read', false)
-        .order('recognized_at', { ascending: false });
+        .order('recognized_at', { ascending: false })
+        .limit(50); // Get both read and unread, but limit to most recent 50
         
       if (error) {
         console.error('Error fetching notifications:', error);
@@ -168,6 +215,28 @@ export class NotificationsService {
       return true;
     } catch (error) {
       console.error('Error updating notification:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Mark all notifications as read
+   */
+  static async markAllAsRead(): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('recognition_notifications')
+        .update({ is_read: true })
+        .eq('is_read', false);
+        
+      if (error) {
+        console.error('Error updating notifications:', error);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error updating notifications:', error);
       return false;
     }
   }

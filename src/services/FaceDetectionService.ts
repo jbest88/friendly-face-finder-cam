@@ -1,472 +1,476 @@
-// Change import from face-api.js to @vladmandic/face-api
+import { supabase } from "@/integrations/supabase/client";
 import * as faceapi from '@vladmandic/face-api';
-import { generateTemporaryId } from '@/utils/idGenerator';
-import { supabase } from '@/integrations/supabase/client';
-import { NotificationsService } from './NotificationsService';
-import { PersonService } from './PersonService';
 
 export interface DetectedFace {
-  detection: any; // Using 'any' temporarily to resolve TypeScript errors
-  expressions?: faceapi.FaceExpressions;
-  age?: number;
-  gender?: string;
-  descriptor?: Float32Array;
-  timestamp: Date;
   id: string;
   image?: string;
+  timestamp: Date;
   name?: string;
-  notifyOnRecognition?: boolean;
-  isRecognized?: boolean;
-  matchedFaceId?: string;
-  matchedPersonId?: string;
-  personId?: string;
-  similarity?: number;
   notes?: string;
+  detection?: faceapi.IDetection;
+  descriptor?: Float32Array;
+  expressions?: faceapi.IExpressionScores;
+  age?: number;
+  gender?: faceapi.Gender;
+  isRecognized?: boolean;
+  personId?: string;
+  notifyOnRecognition?: boolean;
 }
 
 export class FaceDetectionService {
-  // Face recognition threshold - lower values are more strict
-  private static RECOGNITION_THRESHOLD = 0.5;
-  // Track faces we've recently recognized to avoid sending duplicate notifications
-  private static recentlyRecognizedFaces: Map<string, number> = new Map();
-  // How long to remember a face was recognized (ms)
-  private static RECOGNITION_MEMORY = 10000; // 10 seconds
+  private static FACE_API_URL = '/models';
+  private static FACE_SIZE = 320;
+  private static MIN_CONFIDENCE = 0.8;
   
+  /**
+   * Load all faceapi models
+   */
+  static async loadModels(): Promise<void> {
+    console.log('Loading face detection models...');
+    
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FaceDetectionService.FACE_API_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(FaceDetectionService.FACE_API_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(FaceDetectionService.FACE_API_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(FaceDetectionService.FACE_API_URL);
+    await faceapi.nets.ageGenderNet.loadFromUri(FaceDetectionService.FACE_API_URL);
+    
+    console.log('All face detection models loaded!');
+  }
+  
+  /**
+   * Detect faces in the video stream
+   */
   static async detectFaces(
-    videoElement: HTMLVideoElement, 
-    canvasElement: HTMLCanvasElement
+    video: HTMLVideoElement, 
+    canvas: HTMLCanvasElement
   ): Promise<DetectedFace[]> {
-    if (!videoElement || !canvasElement) return [];
-    
-    const displaySize = {
-      width: videoElement.videoWidth,
-      height: videoElement.videoHeight
-    };
-    
-    faceapi.matchDimensions(canvasElement, displaySize);
-    
-    try {
-      const detections = await faceapi
-        .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
-        .withFaceLandmarks()
-        .withFaceExpressions()
-        .withAgeAndGender()
-        .withFaceDescriptors();
-      
-      const resizedDetections = faceapi.resizeResults(detections, displaySize);
-      
-      // Draw face detection results on canvas
-      const ctx = canvasElement.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        faceapi.draw.drawDetections(canvasElement, resizedDetections);
-        faceapi.draw.drawFaceLandmarks(canvasElement, resizedDetections);
-      }
-      
-      // Convert to our DetectedFace format
-      return resizedDetections.map(detection => ({
-        detection: detection.detection,
-        expressions: detection.expressions,
-        age: detection.age,
-        gender: detection.gender,
-        descriptor: detection.descriptor,
-        timestamp: new Date(),
-        id: generateTemporaryId()
-      }));
-    } catch (error) {
-      console.error('Face detection error:', error);
+    if (!video) {
+      console.warn('No video stream detected');
       return [];
     }
-  }
-  
-  static captureFaceImage(
-    videoElement: HTMLVideoElement, 
-    detectedFaces: DetectedFace[]
-  ): DetectedFace[] {
-    if (detectedFaces.length === 0 || !videoElement) return [];
     
-    try {
-      // Create a temporary canvas to capture the current frame
-      const canvas = document.createElement('canvas');
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) return detectedFaces;
-      
-      // Draw the video frame to the canvas
-      ctx.drawImage(videoElement, 0, 0);
-      
-      // Get the image data as base64
-      const imageData = canvas.toDataURL('image/jpeg');
-      
-      // Add the image to each detected face
-      return detectedFaces.map(face => ({
-        ...face,
-        id: generateTemporaryId(),
-        image: imageData,
-        timestamp: new Date()
-      }));
-    } catch (error) {
-      console.error('Error capturing face image:', error);
-      return detectedFaces;
+    // Set canvas dimensions to video dimensions
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Use the tiny face detector
+    const detections = await faceapi.detectAllFaces(
+      video, 
+      new faceapi.TinyFaceDetectorOptions({ 
+        inputSize: FaceDetectionService.FACE_SIZE, 
+        scoreThreshold: FaceDetectionService.MIN_CONFIDENCE 
+      })
+    )
+      .withFaceLandmarks()
+      .withFaceExpressions()
+      .withAgeAndGender()
+      .withFaceDescriptors();
+    
+    if (!detections || detections.length === 0) {
+      return [];
     }
+    
+    // Draw the detections on the canvas
+    const displaySize = { width: video.videoWidth, height: video.videoHeight };
+    const resizedDetections = faceapi.resizeResults(detections, displaySize);
+    faceapi.matchDimensions(canvas, displaySize);
+    faceapi.getContext2d(canvas).clearRect(0, 0, canvas.width, canvas.height);
+    faceapi.draw.drawDetections(canvas, resizedDetections);
+    // faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+    // faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+    
+    // Convert faceapi detections to our DetectedFace format
+    return detections.map(detection => ({
+      detection: detection.detection,
+      expressions: detection.expressions,
+      age: detection.age,
+      gender: detection.gender,
+      descriptor: detection.descriptor,
+      timestamp: new Date(),
+      id: FaceDetectionService.generateFaceId(),
+    }));
   }
   
-  static async storeFaceInDatabase(face: DetectedFace): Promise<string | undefined> {
-    try {
-      if (!face.descriptor || !face.image) {
-        console.error('Cannot store face without descriptor and image');
-        return undefined;
-      }
-
-      // Find best matching person
-      const { person, distance } = await PersonService.findBestMatchingPerson(face.descriptor);
-      
-      let personId: string | undefined;
-      
-      // If we found a close match, add the face to that person
-      if (person && PersonService.shouldClusterWithPerson(distance)) {
-        console.log(`Adding face to existing person: ${person.name} (distance: ${distance})`);
-        personId = await PersonService.addFaceToPerson(person.id, face);
-        
-        // Return the face ID (not person ID)
-        return personId;
-      } 
-      
-      // Otherwise create a new person with this face
-      console.log('Creating new person with this face');
-      personId = await PersonService.createPersonWithFace(face);
-      
-      return personId;
-    } catch (error) {
-      console.error('Error storing face in database:', error);
+  /**
+   * Compare detected face against known faces
+   */
+  static compareFaces(
+    detectedFace: DetectedFace, 
+    knownFaces: DetectedFace[]
+  ): DetectedFace | undefined {
+    if (!detectedFace.descriptor || knownFaces.length === 0) {
       return undefined;
     }
+    
+    const faceMatcher = new faceapi.FaceMatcher(
+      knownFaces.map(face => new faceapi.LabeledFaceDescriptors(
+        face.id, 
+        [face.descriptor!]
+      ))
+    );
+    
+    const bestMatch = faceMatcher.findBestMatch(detectedFace.descriptor);
+    
+    if (bestMatch.label === 'unknown') {
+      return undefined;
+    }
+    
+    const matchedFace = knownFaces.find(face => face.id === bestMatch.label);
+    
+    if (matchedFace) {
+      matchedFace.isRecognized = true;
+    }
+    
+    return matchedFace;
   }
-
-  static async getFacesFromDatabase(): Promise<DetectedFace[]> {
-    try {
-      // Get all persons first
-      const { data: persons, error: personsError } = await supabase
-        .from('persons')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (personsError) {
-        console.error('Error fetching persons from database:', personsError);
-        return [];
-      }
-
-      console.log(`Fetched ${persons.length} persons from database`);
+  
+  /**
+   * Capture the current face image from the video stream
+   */
+  static captureFaceImage(
+    video: HTMLVideoElement, 
+    detectedFaces: DetectedFace[]
+  ): DetectedFace[] {
+    if (!video || detectedFaces.length === 0) {
+      console.warn('No video stream or faces detected');
+      return [];
+    }
+    
+    const capturedFaces: DetectedFace[] = [];
+    
+    detectedFaces.forEach(face => {
+      if (!face.detection) return;
       
-      // For each person, get one representative face
-      const faces: DetectedFace[] = [];
-      for (const person of persons) {
-        // Get the most recent face for this person
-        const { data: personFaces, error: facesError } = await supabase
-          .from('stored_faces')
-          .select('*')
-          .eq('person_id', person.id)
-          .order('updated_at', { ascending: false })
-          .limit(1);
-
-        if (facesError || !personFaces || personFaces.length === 0) {
-          // If no faces found, create a placeholder
-          faces.push({
-            id: person.id,
-            name: person.name,
-            timestamp: new Date(person.updated_at),
-            detection: null,
-            notes: person.notes,
-            notifyOnRecognition: person.notify_on_recognition,
-            personId: person.id
-          });
-          continue;
-        }
-        
-        // Add the representative face with person data
-        const face = personFaces[0];
-        faces.push({
-          id: person.id, // Use the person ID as the ID
-          name: person.name,
-          descriptor: new Float32Array(face.descriptor),
+      // Extract face region from video frame
+      const { x, y, width, height } = face.detection.box;
+      
+      // Create a canvas to draw the face region
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) return;
+      
+      // Draw the face region on the canvas
+      ctx.drawImage(
+        video,
+        x,
+        y,
+        width,
+        height,
+        0,
+        0,
+        width,
+        height
+      );
+      
+      // Convert the canvas to a data URL
+      const imageData = canvas.toDataURL('image/jpeg');
+      
+      // Add the image data to the face object
+      face.image = imageData;
+      capturedFaces.push(face);
+    });
+    
+    return capturedFaces;
+  }
+  
+  /**
+   * Generate a unique ID for each detected face
+   */
+  private static generateFaceId(): string {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
+  
+  /**
+   * Save face to local storage
+   */
+  static saveFaces(faces: DetectedFace[]): void {
+    localStorage.setItem('savedFaces', JSON.stringify(faces));
+  }
+  
+  /**
+   * Get faces from local storage
+   */
+  static getFacesFromLocalStorage(): DetectedFace[] {
+    const savedFaces = localStorage.getItem('savedFaces');
+    return savedFaces ? JSON.parse(savedFaces) : [];
+  }
+  
+  /**
+   * Store face in database
+   */
+  static async storeFaceInDatabase(face: DetectedFace): Promise<string> {
+    try {
+      const { data, error } = await supabase
+        .from('faces')
+        .insert({
           image: face.image,
+          timestamp: face.timestamp.toISOString(),
+          name: face.name,
+          notes: face.notes,
+          detection: face.detection,
+          descriptor: face.descriptor ? Array.from(face.descriptor) : null,
+          expressions: face.expressions,
           age: face.age,
           gender: face.gender,
-          timestamp: new Date(person.updated_at),
-          notifyOnRecognition: person.notify_on_recognition,
-          notes: person.notes,
-          detection: null,
-          personId: person.id
-        });
+          person_id: face.personId,
+          notify_on_recognition: face.notifyOnRecognition
+        })
+        .select()
+        .single();
+        
+      if (error) {
+        console.error('Error saving face to database:', error);
+        throw error;
       }
       
-      return faces;
+      return data.id;
     } catch (error) {
-      console.error('Error processing faces from database:', error);
+      console.error('Error saving face to database:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get faces from database
+   */
+  static async getFacesFromDatabase(): Promise<DetectedFace[]> {
+    try {
+      const { data, error } = await supabase
+        .from('faces')
+        .select('*')
+        .order('timestamp', { ascending: false });
+        
+      if (error) {
+        console.error('Error fetching faces from database:', error);
+        return [];
+      }
+      
+      // Convert the data to our DetectedFace format
+      return data.map(face => ({
+        ...face,
+        timestamp: new Date(face.timestamp),
+        descriptor: face.descriptor ? new Float32Array(face.descriptor) : undefined,
+        notifyOnRecognition: face.notify_on_recognition,
+        personId: face.person_id,
+      })) as DetectedFace[];
+    } catch (error) {
+      console.error('Error fetching faces from database:', error);
       return [];
     }
   }
-
+  
+  /**
+   * Update face in database
+   */
   static async updateFaceInDatabase(face: DetectedFace): Promise<boolean> {
     try {
-      // Check if we're updating a face or a person
-      if (face.personId) {
-        // Update the person info
-        return await PersonService.updatePerson({
-          id: face.personId,
-          name: face.name || 'Unknown Person',
+      const { error } = await supabase
+        .from('faces')
+        .update({
+          name: face.name,
           notes: face.notes,
-          notifyOnRecognition: face.notifyOnRecognition,
-          createdAt: face.timestamp,
-          updatedAt: new Date()
-        });
+          notify_on_recognition: face.notifyOnRecognition
+        })
+        .eq('id', face.id);
+        
+      if (error) {
+        console.error('Error updating face in database:', error);
+        return false;
       }
       
-      // If it's just a face (legacy), update the face directly
-      if (!face.id) return false;
-
-      const { error } = await supabase.from('stored_faces').update({
-        name: face.name,
-        notify_on_recognition: face.notifyOnRecognition,
-        notes: face.notes,
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).eq('id', face.id);
-
-      return !error;
+      return true;
     } catch (error) {
       console.error('Error updating face in database:', error);
       return false;
     }
   }
-
+  
+  /**
+   * Delete face from database
+   */
   static async deleteFaceFromDatabase(faceId: string): Promise<boolean> {
     try {
-      // Check if this is a person ID
-      const { data: person } = await supabase
-        .from('persons')
-        .select('id')
-        .eq('id', faceId)
-        .maybeSingle();
+      const { error } = await supabase
+        .from('faces')
+        .delete()
+        .eq('id', faceId);
         
-      if (person) {
-        // Delete the entire person and all their faces
-        return await PersonService.deletePerson(faceId);
+      if (error) {
+        console.error('Error deleting face from database:', error);
+        return false;
       }
       
-      // Otherwise delete a single face
-      const { error } = await supabase.from('stored_faces').delete().eq('id', faceId);
-      return !error;
+      return true;
     } catch (error) {
       console.error('Error deleting face from database:', error);
       return false;
     }
   }
-
-  static compareFaces(detectedFace: DetectedFace, storedFaces: DetectedFace[]): DetectedFace | undefined {
+  
+  /**
+   * Auto-save unidentified face
+   */
+  static async autoSaveUnidentifiedFace(face: DetectedFace): Promise<void> {
     try {
-      if (!detectedFace.descriptor || storedFaces.length === 0) {
-        console.log('No descriptor or stored faces to compare');
-        return undefined;
-      }
-
-      console.log(`Comparing with ${storedFaces.length} stored faces`);
-      let bestMatch: { face: DetectedFace, distance: number } | undefined;
-
-      for (const storedFace of storedFaces) {
-        if (!storedFace.descriptor) {
-          console.log('Skipping face without descriptor');
-          continue;
-        }
-
-        // Calculate Euclidean distance between face descriptors
-        const distance = this.calculateFaceDistance(
-          detectedFace.descriptor, 
-          storedFace.descriptor
-        );
-
-        // Lower distance = better match
-        if (distance < this.RECOGNITION_THRESHOLD && (!bestMatch || distance < bestMatch.distance)) {
-          bestMatch = {
-            face: storedFace,
-            distance
-          };
-        }
-      }
-
-      if (bestMatch) {
-        console.log(`Match found: ${bestMatch.face.name}, similarity: ${(1 - bestMatch.distance) * 100}%`);
-        
-        // Create a matched face with recognition info
-        const recognizedFace = {
-          ...detectedFace,
-          isRecognized: true,
-          matchedFaceId: bestMatch.face.id,
-          name: bestMatch.face.name,
-          notes: bestMatch.face.notes,
-          notifyOnRecognition: bestMatch.face.notifyOnRecognition,
-          similarity: 1 - bestMatch.distance // Convert distance to similarity (0-1)
-        };
-        
-        // Only send notification if the face has notifyOnRecognition set
-        // and we haven't recently recognized this face
-        if (bestMatch.face.notifyOnRecognition !== false && 
-            bestMatch.face.id && 
-            !this.wasRecentlyRecognized(bestMatch.face.id)) {
-          
-          // Mark this face as recently recognized
-          this.markFaceAsRecognized(bestMatch.face.id);
-          
-          // Send notification with image data
-          this.sendRecognitionNotification(recognizedFace);
-        }
-        
-        return recognizedFace;
-      }
-
-      console.log('No match found among stored faces');
-      return undefined;
+      face.name = 'Unidentified Face';
+      face.notes = 'Automatically saved';
+      
+      // Store in database
+      const id = await FaceDetectionService.storeFaceInDatabase(face);
+      console.log('Auto-saved face with ID:', id);
+      
+      // Update local storage
+      const savedFaces = FaceDetectionService.getFacesFromLocalStorage();
+      savedFaces.push(face);
+      FaceDetectionService.saveFaces(savedFaces);
     } catch (error) {
-      console.error('Error comparing faces:', error);
-      return undefined;
+      console.error('Error auto-saving face:', error);
+    }
+  }
+  
+  /**
+   * Create a new person from an existing face
+   */
+  static async createPersonFromFace(faceId: string): Promise<string> {
+    try {
+      // First get the face data
+      const { data: face, error: faceError } = await supabase
+        .from('faces')
+        .select('*')
+        .eq('id', faceId)
+        .single();
+      
+      if (faceError || !face) {
+        console.error('Error loading face for person creation:', faceError);
+        throw new Error('Could not find face');
+      }
+      
+      // Create a new person
+      const { data: person, error: personError } = await supabase
+        .from('persons')
+        .insert({
+          name: face.name || 'Unknown Person',
+          notes: face.notes,
+          notify_on_recognition: face.notify_on_recognition,
+        })
+        .select()
+        .single();
+      
+      if (personError || !person) {
+        console.error('Error creating person:', personError);
+        throw new Error('Could not create person');
+      }
+      
+      // Update the face with the new person_id
+      const { error: updateError } = await supabase
+        .from('faces')
+        .update({ person_id: person.id })
+        .eq('id', faceId);
+      
+      if (updateError) {
+        console.error('Error updating face with person ID:', updateError);
+        throw new Error('Could not link face to person');
+      }
+      
+      return person.id;
+    } catch (error) {
+      console.error('Error in createPersonFromFace:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Add a face to an existing person
+   */
+  static async addFaceToPerson(faceId: string, personId: string): Promise<boolean> {
+    try {
+      // Get the target person data
+      const { data: person, error: personError } = await supabase
+        .from('persons')
+        .select('*')
+        .eq('id', personId)
+        .single();
+      
+      if (personError || !person) {
+        console.error('Error loading person:', personError);
+        throw new Error('Could not find person');
+      }
+      
+      // Update the face with the person_id
+      const { error: updateError } = await supabase
+        .from('faces')
+        .update({ 
+          person_id: personId,
+          name: person.name // Keep name in sync with person
+        })
+        .eq('id', faceId);
+      
+      if (updateError) {
+        console.error('Error adding face to person:', updateError);
+        throw new Error('Could not add face to person');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error in addFaceToPerson:', error);
+      return false;
     }
   }
 
   /**
-   * Check if a face was recently recognized to avoid duplicate notifications
+   * Get recognition history for a face or person
    */
-  private static wasRecentlyRecognized(faceId: string): boolean {
-    const now = Date.now();
-    const lastRecognized = this.recentlyRecognizedFaces.get(faceId);
-    
-    // Clean up old entries while we're here
-    this.cleanupRecentlyRecognizedFaces();
-    
-    return !!lastRecognized && (now - lastRecognized < this.RECOGNITION_MEMORY);
-  }
-  
-  /**
-   * Mark a face as recently recognized
-   */
-  private static markFaceAsRecognized(faceId: string): void {
-    this.recentlyRecognizedFaces.set(faceId, Date.now());
-  }
-  
-  /**
-   * Clean up old entries from the recentlyRecognizedFaces map
-   */
-  private static cleanupRecentlyRecognizedFaces(): void {
-    const now = Date.now();
-    for (const [faceId, timestamp] of this.recentlyRecognizedFaces.entries()) {
-      if (now - timestamp > this.RECOGNITION_MEMORY) {
-        this.recentlyRecognizedFaces.delete(faceId);
-      }
-    }
-  }
-
-  private static calculateFaceDistance(descriptor1: Float32Array, descriptor2: Float32Array): number {
-    if (!descriptor1 || !descriptor2 || descriptor1.length !== descriptor2.length) {
-      console.error('Invalid descriptors for comparison');
-      return Infinity;
-    }
-
-    let sum = 0;
-    for (let i = 0; i < descriptor1.length; i++) {
-      const diff = descriptor1[i] - descriptor2[i];
-      sum += diff * diff;
-    }
-    return Math.sqrt(sum);
-  }
-  
-  private static async sendRecognitionNotification(face: DetectedFace): Promise<void> {
-    if (!face.name) return;
-    
+  static async getRecognitionHistory(
+    id: string, 
+    type: 'face' | 'person' = 'face', 
+    limit: number = 20
+  ): Promise<any[]> {
     try {
-      // Ensure we have an image for the notification
-      if (!face.image) {
-        console.log('No image available for notification, skipping');
+      let query = supabase
+        .from('recognition_notifications')
+        .select('*')
+        .order('recognized_at', { ascending: false })
+        .limit(limit);
+      
+      if (type === 'face') {
+        query = query.eq('face_id', id);
+      } else {
+        // For person type, we need to get all faces belonging to this person
+        const { data: faces, error: facesError } = await supabase
+          .from('faces')
+          .select('id')
+          .eq('person_id', id);
         
-        // Try to get the image from the video frame
-        const videoEl = document.querySelector('video');
-        if (videoEl && videoEl.readyState >= 2) { // Have enough data to grab a frame
-          const canvas = document.createElement('canvas');
-          canvas.width = videoEl.videoWidth;
-          canvas.height = videoEl.videoHeight;
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx) {
-            ctx.drawImage(videoEl, 0, 0);
-            face.image = canvas.toDataURL('image/jpeg', 0.7); // Lower quality for smaller size
-          }
-        } else {
-          // If still no image, just continue without it
-          console.log('Could not capture video frame for notification');
+        if (facesError || !faces) {
+          console.error('Error getting faces for person:', facesError);
+          return [];
         }
+        
+        // Extract face IDs
+        const faceIds = faces.map(face => face.id);
+        
+        if (faceIds.length === 0) {
+          return [];
+        }
+        
+        // Query for notifications with any of these face IDs
+        query = query.in('face_id', faceIds);
       }
       
-      console.log(`Sending notification for recognized face: ${face.name}`);
-      await NotificationsService.sendRecognitionNotification(
-        face.name,
-        face.matchedFaceId,
-        face.image,
-        face.notes
-      );
-    } catch (error) {
-      console.error('Error sending recognition notification:', error);
-    }
-  }
-
-  // Local storage methods
-  static getFacesFromLocalStorage(): DetectedFace[] {
-    try {
-      const saved = localStorage.getItem('savedFaces');
-      if (saved) {
-        const faces = JSON.parse(saved);
-        // Convert string dates back to Date objects and add required detection property
-        return faces.map((face: any) => ({
-          ...face,
-          detection: null, // Adding the required detection property
-          timestamp: new Date(face.timestamp)
-        }));
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error getting recognition history:', error);
+        return [];
       }
-    } catch (error) {
-      console.error('Error loading saved faces:', error);
-    }
-    return [];
-  }
-  
-  static saveFaces(faces: DetectedFace[]): void {
-    try {
-      localStorage.setItem('savedFaces', JSON.stringify(faces));
-    } catch (error) {
-      console.error('Error saving faces:', error);
-    }
-  }
-
-  // Auto-save unidentified faces
-  static autoSaveUnidentifiedFace(face: DetectedFace): DetectedFace {
-    if (!face.image) return face;
-    
-    try {
-      // Add unidentified tag to the face
-      const unidentifiedFace = {
-        ...face,
-        name: 'Unidentified Person',
-        notes: 'Automatically saved - not recognized',
-        timestamp: new Date()
-      };
       
-      // Save to local storage
-      const savedFaces = this.getFacesFromLocalStorage();
-      savedFaces.push(unidentifiedFace);
-      this.saveFaces(savedFaces);
-      
-      return unidentifiedFace;
+      return data || [];
     } catch (error) {
-      console.error('Error auto-saving unidentified face:', error);
-      return face;
+      console.error('Error in getRecognitionHistory:', error);
+      return [];
     }
   }
 }
