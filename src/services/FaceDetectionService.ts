@@ -7,14 +7,15 @@ export interface DetectedFace {
   timestamp: Date;
   name?: string;
   notes?: string;
-  detection?: faceapi.IDetection;
+  detection?: any; // Changed from faceapi.IDetection to any
   descriptor?: Float32Array;
-  expressions?: faceapi.IExpressionScores;
+  expressions?: any; // Changed from faceapi.IExpressionScores to any
   age?: number;
-  gender?: faceapi.Gender;
+  gender?: string; // Changed from faceapi.Gender to string
   isRecognized?: boolean;
   personId?: string;
   notifyOnRecognition?: boolean;
+  similarity?: number; // Added missing similarity property
 }
 
 export class FaceDetectionService {
@@ -74,10 +75,11 @@ export class FaceDetectionService {
     const displaySize = { width: video.videoWidth, height: video.videoHeight };
     const resizedDetections = faceapi.resizeResults(detections, displaySize);
     faceapi.matchDimensions(canvas, displaySize);
-    faceapi.getContext2d(canvas).clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
     faceapi.draw.drawDetections(canvas, resizedDetections);
-    // faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-    // faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
     
     // Convert faceapi detections to our DetectedFace format
     return detections.map(detection => ({
@@ -119,6 +121,7 @@ export class FaceDetectionService {
     
     if (matchedFace) {
       matchedFace.isRecognized = true;
+      matchedFace.similarity = 1 - bestMatch.distance; // Add similarity score
     }
     
     return matchedFace;
@@ -204,7 +207,7 @@ export class FaceDetectionService {
   static async storeFaceInDatabase(face: DetectedFace): Promise<string> {
     try {
       const { data, error } = await supabase
-        .from('faces')
+        .from('stored_faces') // Changed from 'faces' to 'stored_faces'
         .insert({
           image: face.image,
           timestamp: face.timestamp.toISOString(),
@@ -239,7 +242,7 @@ export class FaceDetectionService {
   static async getFacesFromDatabase(): Promise<DetectedFace[]> {
     try {
       const { data, error } = await supabase
-        .from('faces')
+        .from('stored_faces') // Changed from 'faces' to 'stored_faces'
         .select('*')
         .order('timestamp', { ascending: false });
         
@@ -268,7 +271,7 @@ export class FaceDetectionService {
   static async updateFaceInDatabase(face: DetectedFace): Promise<boolean> {
     try {
       const { error } = await supabase
-        .from('faces')
+        .from('stored_faces') // Changed from 'faces' to 'stored_faces'
         .update({
           name: face.name,
           notes: face.notes,
@@ -294,7 +297,7 @@ export class FaceDetectionService {
   static async deleteFaceFromDatabase(faceId: string): Promise<boolean> {
     try {
       const { error } = await supabase
-        .from('faces')
+        .from('stored_faces') // Changed from 'faces' to 'stored_faces'
         .delete()
         .eq('id', faceId);
         
@@ -338,7 +341,7 @@ export class FaceDetectionService {
     try {
       // First get the face data
       const { data: face, error: faceError } = await supabase
-        .from('faces')
+        .from('stored_faces')
         .select('*')
         .eq('id', faceId)
         .single();
@@ -366,7 +369,7 @@ export class FaceDetectionService {
       
       // Update the face with the new person_id
       const { error: updateError } = await supabase
-        .from('faces')
+        .from('stored_faces')
         .update({ person_id: person.id })
         .eq('id', faceId);
       
@@ -401,7 +404,7 @@ export class FaceDetectionService {
       
       // Update the face with the person_id
       const { error: updateError } = await supabase
-        .from('faces')
+        .from('stored_faces')
         .update({ 
           person_id: personId,
           name: person.name // Keep name in sync with person
@@ -440,7 +443,7 @@ export class FaceDetectionService {
       } else {
         // For person type, we need to get all faces belonging to this person
         const { data: faces, error: facesError } = await supabase
-          .from('faces')
+          .from('stored_faces')
           .select('id')
           .eq('person_id', id);
         

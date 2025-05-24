@@ -101,14 +101,21 @@ const SavedFaces: React.FC = () => {
     }
   };
   
-  const handleMergeFace = (face: DetectedFace) => {
-    setSelectedFace(face);
-    setShowMergeDialog(true);
+  // Fixed function signatures to match expected types
+  const handleMergeFace = (faceId: string) => {
+    const face = persons.find(f => f.id === faceId) || localFaces.find(f => f.id === faceId);
+    if (face) {
+      setSelectedFace(face);
+      setShowMergeDialog(true);
+    }
   };
   
-  const handleViewHistory = (face: DetectedFace) => {
-    setSelectedFace(face);
-    setShowHistoryDialog(true);
+  const handleViewHistory = (faceId: string) => {
+    const face = persons.find(f => f.id === faceId) || localFaces.find(f => f.id === faceId);
+    if (face) {
+      setSelectedFace(face);
+      setShowHistoryDialog(true);
+    }
   };
 
   // Modify the handleSaveFace function to add merge and history options
@@ -373,7 +380,7 @@ const SavedFaces: React.FC = () => {
                 <Button
                   variant="outline"
                   className="text-white border-gray-700 hover:bg-gray-800"
-                  onClick={() => handleMergeFace(face)}
+                  onClick={() => handleMergeFace(face.id)} // Fixed to pass face.id instead of face
                 >
                   <Users className="h-4 w-4 mr-2" />
                   Merge
@@ -383,7 +390,7 @@ const SavedFaces: React.FC = () => {
               <Button
                 variant="outline"
                 className="w-full mt-2 text-white border-gray-700 hover:bg-gray-800"
-                onClick={() => handleViewHistory(face)}
+                onClick={() => handleViewHistory(face.id)} // Fixed to pass face.id instead of face
               >
                 <History className="h-4 w-4 mr-2" />
                 View History
@@ -538,8 +545,8 @@ const SavedFaces: React.FC = () => {
               face={editingFace}
               onSave={handleSaveFace}
               onDelete={() => handleDeleteFace(editingFace.id)}
-              onMerge={handleMergeFace}
-              onViewHistory={handleViewHistory}
+              onMerge={() => handleMergeFace(editingFace.id)}
+              onViewHistory={() => handleViewHistory(editingFace.id)}
             />
           </DialogContent>
         </Dialog>

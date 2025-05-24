@@ -39,7 +39,7 @@ const FaceDetectionDisplay: React.FC<FaceDetectionDisplayProps> = ({ detectedFac
                   <p className="text-sm font-medium mb-1">Expression:</p>
                   <div className="space-y-1">
                     {Object.entries(face.expressions)
-                      .sort((a, b) => b[1] - a[1])
+                      .sort((a, b) => (b[1] as number) - (a[1] as number)) // Fixed math operation
                       .slice(0, 3)
                       .map(([expression, probability]) => (
                         <div key={expression} className="flex items-center">
@@ -47,11 +47,11 @@ const FaceDetectionDisplay: React.FC<FaceDetectionDisplayProps> = ({ detectedFac
                           <div className="flex-1 bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden">
                             <div 
                               className="bg-green-500 h-full rounded-full" 
-                              style={{ width: `${probability * 100}%` }}
+                              style={{ width: `${(probability as number) * 100}%` }} // Fixed math operation
                             />
                           </div>
                           <div className="w-12 text-right text-xs">
-                            {Math.round(probability * 100)}%
+                            {Math.round((probability as number) * 100)}% {/* Fixed math operation */}
                           </div>
                         </div>
                       ))
